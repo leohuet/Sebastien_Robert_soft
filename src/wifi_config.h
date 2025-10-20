@@ -31,23 +31,23 @@ void wifi_OTA(void * _){
 
 void begin_wifi(){
   // build and set hostname
-  uint64_t mac = ESP.getEfuseMac();
-  uint64_t reversed_mac = 0;
-  for (int i = 0; i < 6; i++) {
-    reversed_mac |= ((mac >> (8 * i)) & 0xFF) << (8 * (5 - i));
-  }
+  // uint64_t mac = ESP.getEfuseMac();
+  // uint64_t reversed_mac = 0;
+  // for (int i = 0; i < 6; i++) {
+  //   reversed_mac |= ((mac >> (8 * i)) & 0xFF) << (8 * (5 - i));
+  // }
 
-  Serial.print("MAC address: ");
-  Serial.println(reversed_mac, HEX);
+  // Serial.print("MAC address: ");
+  // Serial.println(reversed_mac, HEX);
 
-  snprintf(host, 22, (String("UC1_") + String(HOST) + String("_%llX")).c_str(), reversed_mac);
+  // snprintf(host, 22, (String("UC1_") + String(HOST) + String("_%llX")).c_str(), reversed_mac);
 
   // Wi-Fi
   WiFi.mode(WIFI_STA);
   // WiFi.config(IPAddress(10, 241, 229, 250), IPAddress(10, 241, 229, 1), IPAddress(10, 241, 229, 1), IPAddress(255, 255, 255, 0));
   WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE, INADDR_NONE);
-  WiFi.setHostname(host); //define hostname
-  WiFi.begin("NOM_WIFI", "SSIO");
+  // WiFi.setHostname(host); //define hostname
+  WiFi.begin("Freebox-8323DD", "dissidemus6-liare.-locatim-paludum");
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
 
