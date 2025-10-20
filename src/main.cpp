@@ -142,6 +142,8 @@ void setup(){
     Serial.println(F("not connected"));
   }
 
+  pinMode(LED_BUILTIN, OUTPUT);
+
   begin_wifi();
   delay(2000);
 
@@ -177,7 +179,7 @@ void setup(){
   }
 
   // change les paramètres du radar
-  Serial.print("max value ");
+  /*Serial.print("max value ");
   uint8_t maxm = moving_max_distance->get();
   uint8_t maxs = stationary_max_distance->get();
   uint16_t inact = inactivity_timer->get();
@@ -239,13 +241,21 @@ void setup(){
   else
   {
     Serial.println(F("Failed"));
-  }
-
+  }*/
+  delay(2000);
   Serial.println("Starting programm..");
 }
 
 void loop(){
   uint8_t id = espui_id->get();
+
+  // OSCMessage msg("/test");
+  // msg.add(1);
+  // Udp.beginPacket(WiFi.broadcastIP(), OSC_OUT_PORT);
+  // msg.send(Udp);
+  // Udp.endPacket();
+  // msg.empty();
+
   // lis les valeurs du radar et récupère les données de présence
   radar.read();
   // si le radar est connecté
@@ -265,4 +275,5 @@ void loop(){
     sendRadarData(id);
     // debugRadar(id);
   }
+  delay(50);
 }
