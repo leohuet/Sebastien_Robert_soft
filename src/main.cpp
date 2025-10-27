@@ -8,8 +8,7 @@
 #include <WiFiUdp.h>
 #include <OSCMessage.h>
 
-#include "ld2410.h"
-#include <HardwareSerial.h>
+#include <RadarSensor.h>
 
 
 #define RADAR_RX_PIN D3
@@ -21,18 +20,18 @@
 // variables liées à la gestion du radar
 uint32_t last_radar_reading = 0;
 bool is_radar_connected = false;
+
 struct Radar_data {
-  bool stationary;
-  uint16_t stationary_distance;
-  uint16_t stationary_energy;
-  bool moving;
-  uint16_t moving_distance;
-  uint16_t moving_energy;
+  bool detected;
+  uint16_t x;
+  uint16_t y;
+  uint16_t distance;
+  uint16_t speed;
+  uint16_t angle;
 };
 
-Radar_data radars_data[4];
-HardwareSerial SerialPort(1);
-ld2410 radar;
+Radar_data radars_data[3];
+RadarSensor radar(RADAR_TX_PIN, RADAR_RX_PIN);
 
 
 //persistentvalues pour les valeurs de contrôle de ESPUI
@@ -53,12 +52,11 @@ PersistentValue* espui_id;
 
 // initialise les valeurs de moyenne glissante
 const uint8_t size_mean = 4;
-uint16_t stat_for_mean[size_mean];
-uint16_t stat_d_for_mean[size_mean];
-uint16_t stat_e_for_mean[size_mean];
-uint16_t mov_for_mean[size_mean];
-uint16_t mov_d_for_mean[size_mean];
-uint16_t mov_e_for_mean[size_mean];
+uint16_t x_for_mean[size_mean];
+uint16_t y_for_mean[size_mean];
+uint16_t dist_for_mean[size_mean];
+uint16_t speed_for_mean[size_mean];
+uint16_t angle_for_mean[size_mean];
 
 // UDP pour les messages OSC
 WiFiUDP Udp;
@@ -76,84 +74,25 @@ uint16_t moyenne_glissante(uint16_t data_array[size_mean], uint16_t data){
   return somme/size_mean;
 }
 
-void changeRadarParams(){
-  // change les paramètres du radar
-  Serial.print("max value ");
-  uint8_t maxm = moving_max_distance->get();
-  uint8_t maxs = stationary_max_distance->get();
-  uint16_t inact = inactivity_timer->get();
-  Serial.println();
-  radar.setMaxValues(maxm, maxs, inact);
-  if(radar.setMaxValues(maxm, maxs, inact)){
-    Serial.println(F("OK, now restart to apply settings"));
-  }
-  else{
-    Serial.println(F("failed"));
-  }
-  delay(1000);
-  for(int i=0; i<moving_max_distance->get(); i++){
-    radar.setGateSensitivityThreshold(i, motion_sensitivity[i]->get(), stationary_sensitivity[i]->get());
-    if(radar.setGateSensitivityThreshold(i, motion_sensitivity[i]->get(), stationary_sensitivity[i]->get())){
-      Serial.println(F("OK, now restart to apply settings"));
-    }
-    else{
-      Serial.println(F("failed"));
-    }
-  }
-
-  delay(1000);
-
-  if(radar.requestCurrentConfiguration()){
-    Serial.println(F("OK"));
-    Serial.print(F("Maximum gate ID: "));
-    Serial.println(radar.max_gate);
-    Serial.print(F("Maximum gate for moving targets: "));
-    Serial.println(radar.max_moving_gate);
-    Serial.print(F("Maximum gate for stationary targets: "));
-    Serial.println(radar.max_stationary_gate);
-    Serial.print(F("Idle time for targets: "));
-    Serial.println(radar.sensor_idle_time);
-    Serial.println(F("Gate sensitivity"));
-    for(uint8_t gate = 0; gate <= radar.max_gate; gate++)
-    {
-      Serial.print(F("Gate "));
-      Serial.print(gate);
-      Serial.print(F(" moving targets: "));
-      Serial.print(radar.motion_sensitivity[gate]);
-      Serial.print(F(" stationary targets: "));
-      Serial.println(radar.stationary_sensitivity[gate]);
-    }
-  }
-  else
-  {
-    Serial.println(F("Failed"));
-  }
-
-  radar.requestRestart();
-
-  ESP.restart();
-}
-
-void updateRadarData(uint8_t radar_id, uint16_t stat, uint16_t stat_dist, uint8_t stat_energy, uint16_t moving, uint16_t moving_dist, uint8_t moving_energy){
+void updateRadarData(uint8_t detected_id, uint16_t detected, uint16_t x, uint8_t y, uint16_t distance, uint16_t speed, uint8_t angle){
   // met à jour les valeurs du radar d'un boitier avec son id et les nouvelles valeurs
-  radars_data[radar_id].stationary = stat;
-  radars_data[radar_id].stationary_distance = stat_dist*stat;
-  radars_data[radar_id].stationary_energy = stat_energy*stat;
-  radars_data[radar_id].moving = moving;
-  radars_data[radar_id].moving_distance = moving_dist*moving;
-  radars_data[radar_id].moving_energy = moving_energy*moving;
+  radars_data[detected_id].detected = detected;
+  radars_data[detected_id].x = x*detected;
+  radars_data[detected_id].y = y*detected;
+  radars_data[detected_id].distance = distance*detected;
+  radars_data[detected_id].speed = speed*detected;
+  radars_data[detected_id].angle = angle*detected;
 }
 
-void sendRadarData(uint8_t radar_id){
+void sendRadarData(uint8_t detected_id){
   // envoie les valeurs du radar du boitier à tous autres
   OSCMessage msg("/broadcast");
-  msg.add(radar_id);
-  msg.add(radars_data[radar_id].stationary);
-  msg.add(radars_data[radar_id].stationary_distance);
-  msg.add(radars_data[radar_id].stationary_energy);
-  msg.add(radars_data[radar_id].moving);
-  msg.add(radars_data[radar_id].moving_distance);
-  msg.add(radars_data[radar_id].moving_energy);
+  msg.add(detected_id);
+  msg.add(radars_data[detected_id].x);
+  msg.add(radars_data[detected_id].y);
+  msg.add(radars_data[detected_id].distance);
+  msg.add(radars_data[detected_id].speed);
+  msg.add(radars_data[detected_id].angle);
   Udp.beginPacket(WiFi.broadcastIP(), OSC_OUT_PORT);
   msg.send(Udp);
   Udp.endPacket();
@@ -161,55 +100,18 @@ void sendRadarData(uint8_t radar_id){
 }
 
 
-void debugRadar(uint8_t id){
-  Serial.println();
-  Serial.print("Radar ");
-  Serial.print(id);
-  Serial.print(" ");
-  Serial.print("is_stationary: ");
-  Serial.print(radars_data[id].stationary);
-  Serial.print(" stationary_distance: ");
-  Serial.print(radars_data[id].stationary_distance);
-  Serial.print(" stationary_energy: ");
-  Serial.print(radars_data[id].stationary_energy);
-  Serial.print(" is_moving: ");
-  Serial.print(radars_data[id].moving);
-  Serial.print(" moving_distance: ");
-  Serial.print(radars_data[id].moving_distance);
-  Serial.print(" moving_energy: ");
-  Serial.print(radars_data[id].moving_energy);
-  Serial.println();
-  Serial.println();
-  Serial.println();
-}
-
 
 void setup(){
 
   // ouvre le port série et le port série pour le radar
   Serial.begin(115200); //Feedback over Serial Monitor
-  Serial1.begin(256000, SERIAL_8N1, RADAR_TX_PIN, RADAR_RX_PIN); //UART for monitoring the radar
+  radar.begin(256000);
   delay(500);
 
   pinMode(LED_BUILTIN, OUTPUT);
 
   begin_wifi();
   delay(2000);
-
-  Serial.print(F("LD2410 radar sensor initialising: "));
-
-  if(radar.begin(Serial1)){
-    Serial.println(F("OK"));
-    Serial.print(F("LD2410 firmware version: "));
-    Serial.print(radar.firmware_major_version);
-    Serial.print('.');
-    Serial.print(radar.firmware_minor_version);
-    Serial.print('.');
-    Serial.println(radar.firmware_bugfix_version, HEX);
-  }
-  else{
-    Serial.println(F("not connected"));
-  }
 
   // initialise les controls de ESPUI
   ESPUI.begin("MAGIQUE_MAIF");
@@ -221,7 +123,7 @@ void setup(){
   espui_id = new PersistentValue("id", ControlColor::Wetasphalt, 0, 0, 4, general_tab);
 
   // valeurs de contrôle du radar
-  reading_frequency = new PersistentValue("fréquence de lecture du radar", ControlColor::Wetasphalt, 1, 1, 2, radar_tab);
+  reading_frequency = new PersistentValue("fréquence de lecture du radar", ControlColor::Wetasphalt, 100, 1000, 2000, radar_tab);
   moving_max_distance = new PersistentValue("moving max distance", ControlColor::Wetasphalt, 7, 0, 7, radar_tab);
   stationary_max_distance = new PersistentValue("stationary max distance", ControlColor::Wetasphalt, 7, 0, 7, radar_tab);
   inactivity_timer = new PersistentValue("inactivity timer", ControlColor::Wetasphalt, 5, 0, 10, radar_tab);
@@ -238,16 +140,15 @@ void setup(){
     old_stat_sensitivity[i] = stationary_sensitivity[i]->get();
   }
 
-
   // initialise les valeurs pour moyenne glissante
   for(int i=0; i<size_mean; i++){
-    stat_d_for_mean[i] = 0;
-    stat_e_for_mean[i] = 0;
-    mov_d_for_mean[i] = 0;
-    mov_e_for_mean[i] = 0;
+    x_for_mean[i] = 0;
+    y_for_mean[i] = 0;
+    dist_for_mean[i] = 0;
+    speed_for_mean[i] = 0;
+    angle_for_mean[i] = 0;
   }
 
-  // changeRadarParams();
   delay(2000);
   Serial.println("Starting programm..");
 }
@@ -255,50 +156,27 @@ void setup(){
 void loop(){
   uint8_t id = espui_id->get();
 
-  if(moving_max_distance->get() != old_mov_max_dist){
-    old_mov_max_dist = moving_max_distance->get();
-    changeRadarParams();
-    return;
-  }
-  else if(stationary_max_distance->get() != old_stat_max_dist){
-    old_stat_max_dist = stationary_max_distance->get();
-    changeRadarParams();
-    return;
-  }
-  for(int i=0; i<stationary_max_distance->get(); i++){
-    if(stationary_sensitivity[i]->get() != old_stat_sensitivity[i]){
-      old_stat_sensitivity[i] = stationary_sensitivity[i]->get();
-      changeRadarParams();
-      return;
-    }
-  }
-  for(int i=0; i<moving_max_distance->get(); i++){
-    if(motion_sensitivity[i]->get() != old_motion_sensitivity[i]){
-      old_motion_sensitivity[i] = motion_sensitivity[i]->get();
-      changeRadarParams();
-      return;
-    }
-  }
-
-  // lis les valeurs du radar et récupère les données de présence
-  radar.read();
-
-  // si le radar est connecté
-  if(radar.isConnected() && millis() - last_radar_reading > 1/reading_frequency->get()*1000){
+  if(radar.update() && millis() - last_radar_reading > 1/reading_frequency->get()){
     last_radar_reading = millis();
-
-    // met à jour les valeurs du radar local avec calcul d'une moyenne glissante
-    updateRadarData(id,
-      radar.presenceDetected(),
-      moyenne_glissante(stat_d_for_mean, radar.stationaryTargetDistance()),
-      moyenne_glissante(stat_e_for_mean, radar.stationaryTargetEnergy()),
-      radar.movingTargetDetected(),
-      moyenne_glissante(mov_d_for_mean, radar.movingTargetDistance()),
-      moyenne_glissante(mov_e_for_mean, radar.movingTargetEnergy())
-    );
-    // envoie ces valeurs mises à jour aux autres boitiers
-    sendRadarData(id);
-    // debugRadar(id);
+    for (int i = 0; i < 3; i++) {
+      RadarTarget t = radar.getTarget(i);
+      if(t.x > 0.0 && t.x < 7000){
+        // met à jour les valeurs du radar local avec calcul d'une moyenne glissante
+        updateRadarData(i,
+          t.detected,
+          moyenne_glissante(x_for_mean, t.x),
+          moyenne_glissante(y_for_mean, t.y),
+          moyenne_glissante(dist_for_mean, t.distance),
+          moyenne_glissante(speed_for_mean, t.speed),
+          moyenne_glissante(angle_for_mean, t.angle)
+        );
+        Serial.printf("Target %d: X=%d mm  Y=%d mm  Speed=%d mm/s  Dist=%.1f  Angle=%.1f°\n",
+                      i, (int)t.x, (int)t.y, (int)t.speed, t.distance, t.angle);
+        // envoie ces valeurs mises à jour aux autres boitiers
+        sendRadarData(i);
+        // debugRadar(id);
+      }
+    }
   }
-  delay(50);
+  delay(20);
 }
