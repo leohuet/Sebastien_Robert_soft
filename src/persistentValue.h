@@ -14,27 +14,28 @@ private:
   static bool initialized;  // Static boolean to keep track of initialization
   String key;  // Key limited to 15 chars
   String label;
-  unsigned int value;
+  String stringValue;  // Pour stocker le texte
+  unsigned int intValue;  // Pour les nombres
+  bool isNumeric;
   ControlColor color;
   int min_val;
   int max_val;
 
 public:
 
-
+  // --- Constructeur pour les nombres ---
   PersistentValue(String k, ControlColor c, int defaultVal, int min, int max, uint16_t parentControl)
-    : color(c), min_val(min), max_val(max) {
-    
-    // Initialize Preferences if not already initialized
-    if (!initialized) {
-      begin();
-    }
+    : color(c), min_val(min), max_val(max), isNumeric(true) {
+    init(k);
+    intValue = preferences.getUInt(key.c_str(), constrain(defaultVal, min, max));
+    registerWithESPUI(parentControl);
+  }
 
-    label = k;
-    // trim key to 15 chars max
-    key = k.substring(0, 15);
-    
-    value = preferences.getUInt(key.c_str(), min(max_val, max(min_val, defaultVal)));
+  // --- Constructeur pour les strings ---
+  PersistentValue(String k, ControlColor c, String defaultVal, uint16_t parentControl)
+    : color(c), min_val(0), max_val(0), isNumeric(false) {
+    init(k);
+    stringValue = preferences.getString(key.c_str(), defaultVal);
     registerWithESPUI(parentControl);
   }
 
@@ -44,31 +45,55 @@ public:
     initialized = true;
   }
 
-  unsigned int get() const {
-    return min(max_val, max(min_val, value));
+  void init(String k) {
+    if (!initialized) begin();
+    label = k;
+    key = k.substring(0, 15);
   }
 
-void registerWithESPUI(uint16_t parentControl) {
-    uint16_t controlID = ESPUI.addControl(ControlType::Number, label.c_str(), String(value), color, parentControl,
-      [](Control *sender, int eventname, void* UserParameter) {
-        if(UserParameter) {
-          reinterpret_cast<PersistentValue*>(UserParameter)->callback(sender, eventname);
-        }
-      },
-      this  // <- UserParameter for extended callback
-    );
+  // --- Récupérer la valeur ---
+  unsigned int getInt() const { return min(max_val, max(min_val, intValue)); }
+  String getString() const { return stringValue; }
 
-    ESPUI.addControl(ControlType::Min, label.c_str(), String(min_val), ControlColor::None, controlID);
-    ESPUI.addControl(ControlType::Max, label.c_str(), String(max_val), ControlColor::None, controlID);
+
+  // --- Enregistrer dans ESPUI ---
+  void registerWithESPUI(uint16_t parentControl) {
+    if (isNumeric) {
+      uint16_t controlID = ESPUI.addControl(
+        ControlType::Number, label.c_str(), String(intValue), color, parentControl,
+        [](Control *sender, int eventname, void *UserParameter) {
+          if (UserParameter)
+            reinterpret_cast<PersistentValue *>(UserParameter)->callback(sender, eventname);
+        },
+        this
+      );
+
+      ESPUI.addControl(ControlType::Min, label.c_str(), String(min_val), ControlColor::None, controlID);
+      ESPUI.addControl(ControlType::Max, label.c_str(), String(max_val), ControlColor::None, controlID);
+
+    } else {
+      uint16_t controlID = ESPUI.addControl(
+        ControlType::Text, label.c_str(), stringValue.c_str(), color, parentControl,
+        [](Control *sender, int eventname, void *UserParameter) {
+          if (UserParameter)
+            reinterpret_cast<PersistentValue *>(UserParameter)->callback(sender, eventname);
+        },
+        this
+      );
+    }
   }
 
-  // Updated callback method
+  // --- Callback ---
   void callback(Control *sender, int eventname) {
-
-    // Update value based on eventname if necessary
-    value = (uint16_t) sender->value.toInt();
-
-    preferences.putUInt(key.c_str(), min(max_val, max(min_val, value)));
+    if (isNumeric) {
+      intValue = constrain(sender->value.toInt(), min_val, max_val);
+      preferences.putUInt(key.c_str(), intValue);
+      Serial.printf("Saved numeric %s = %u\n", key.c_str(), intValue);
+    } else {
+      stringValue = sender->value;
+      preferences.putString(key.c_str(), stringValue);
+      Serial.printf("Saved string %s = %s\n", key.c_str(), stringValue.c_str());
+    }
   }
 };
 
