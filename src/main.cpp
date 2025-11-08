@@ -14,8 +14,11 @@
 #define RADAR_RX_PIN D3
 #define RADAR_TX_PIN D2
 
-#define OSC_OUT_PORT 2107
 
+// OSC parameters
+IPAddress ip_address = IPAddress(192, 168, 1, 108);
+uint16_t ableton_port = 8001;
+uint16_t td_port = 9001;
 
 // variables liées à la gestion du radar
 uint32_t last_radar_reading = 0;
@@ -40,23 +43,17 @@ uint8_t old_mov_max_dist = 7;
 PersistentValue* stationary_max_distance;
 uint8_t old_stat_max_dist = 7;
 PersistentValue* inactivity_timer;
-PersistentValue* motion_sensitivity[8];
-PersistentValue* stationary_sensitivity[8];
-uint8_t motion_sensitivity_rst[8] = {70, 60, 50, 50, 40, 30, 20, 10};
-uint8_t stationary_sensitivity_rst[8] = {50, 50, 40, 40, 30, 30, 20, 20};
-uint8_t old_motion_sensitivity[8] = {70, 60, 50, 50, 40, 30, 20, 10};
-uint8_t old_stat_sensitivity[8] = {50, 50, 40, 40, 30, 30, 20, 20};
 PersistentValue* reading_frequency;
 PersistentValue* espui_id;
 
 
 // initialise les valeurs de moyenne glissante
-const uint8_t size_mean = 4;
-uint16_t x_for_mean[size_mean];
-uint16_t y_for_mean[size_mean];
-uint16_t dist_for_mean[size_mean];
-uint16_t speed_for_mean[size_mean];
-uint16_t angle_for_mean[size_mean];
+const uint8_t size_mean = 10;
+uint16_t x_for_mean[3][size_mean];
+uint16_t y_for_mean[3][size_mean];
+uint16_t dist_for_mean[3][size_mean];
+uint16_t speed_for_mean[3][size_mean];
+uint16_t angle_for_mean[3][size_mean];
 
 // UDP pour les messages OSC
 WiFiUDP Udp;
@@ -93,7 +90,7 @@ void sendRadarData(uint8_t detected_id){
   msg.add(radars_data[detected_id].distance);
   msg.add(radars_data[detected_id].speed);
   msg.add(radars_data[detected_id].angle);
-  Udp.beginPacket(WiFi.broadcastIP(), OSC_OUT_PORT);
+  Udp.beginPacket(ip_address, ableton_port);
   msg.send(Udp);
   Udp.endPacket();
   msg.empty();
@@ -129,24 +126,16 @@ void setup(){
   inactivity_timer = new PersistentValue("inactivity timer", ControlColor::Wetasphalt, 5, 0, 10, radar_tab);
   old_mov_max_dist = moving_max_distance->get();
   old_stat_max_dist = stationary_max_distance->get();
-  ESPUI.addControl(ControlType::Separator, "motion sensitivity", "motion sensitivity", ControlColor::Wetasphalt, radar_tab);
-  for(int i=0; i<moving_max_distance->get(); i++){
-    motion_sensitivity[i] = new PersistentValue(String(i)+" motion sensitivity", ControlColor::Wetasphalt, motion_sensitivity_rst[i], 0, 100, radar_tab);
-    old_motion_sensitivity[i] = motion_sensitivity[i]->get();
-  }
-  ESPUI.addControl(ControlType::Separator, "stationary sensitivity", "stationary sensitivity", ControlColor::Wetasphalt, radar_tab);
-  for(int i=0; i<stationary_max_distance->get(); i++){
-    stationary_sensitivity[i] = new PersistentValue(String(i)+" stationary sensitivity", ControlColor::Wetasphalt, stationary_sensitivity_rst[i], 0, 100, radar_tab);
-    old_stat_sensitivity[i] = stationary_sensitivity[i]->get();
-  }
 
   // initialise les valeurs pour moyenne glissante
-  for(int i=0; i<size_mean; i++){
-    x_for_mean[i] = 0;
-    y_for_mean[i] = 0;
-    dist_for_mean[i] = 0;
-    speed_for_mean[i] = 0;
-    angle_for_mean[i] = 0;
+  for(int j=0; j<3; j++){
+    for(int i=0; i<size_mean; i++){
+      x_for_mean[j][i] = 0;
+      y_for_mean[j][i] = 0;
+      dist_for_mean[j][i] = 0;
+      speed_for_mean[j][i] = 0;
+      angle_for_mean[j][i] = 0;
+    }
   }
 
   delay(2000);
@@ -164,11 +153,11 @@ void loop(){
         // met à jour les valeurs du radar local avec calcul d'une moyenne glissante
         updateRadarData(i,
           t.detected,
-          moyenne_glissante(x_for_mean, t.x),
-          moyenne_glissante(y_for_mean, t.y),
-          moyenne_glissante(dist_for_mean, t.distance),
-          moyenne_glissante(speed_for_mean, t.speed),
-          moyenne_glissante(angle_for_mean, t.angle)
+          moyenne_glissante(x_for_mean[i], t.x),
+          moyenne_glissante(y_for_mean[i], t.y),
+          moyenne_glissante(dist_for_mean[i], t.distance),
+          moyenne_glissante(speed_for_mean[i], t.speed),
+          moyenne_glissante(angle_for_mean[i], t.angle)
         );
         Serial.printf("Target %d: X=%d mm  Y=%d mm  Speed=%d mm/s  Dist=%.1f  Angle=%.1f°\n",
                       i, (int)t.x, (int)t.y, (int)t.speed, t.distance, t.angle);
