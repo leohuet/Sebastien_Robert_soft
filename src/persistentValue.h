@@ -14,9 +14,11 @@ private:
   static bool initialized;  // Static boolean to keep track of initialization
   String key;  // Key limited to 15 chars
   String label;
-  String stringValue;  // Pour stocker le texte
-  unsigned int intValue;  // Pour les nombres
+  String stringValue;
+  unsigned int intValue;
+  bool boolValue;
   bool isNumeric;
+  bool isBool;
   ControlColor color;
   int min_val;
   int max_val;
@@ -25,7 +27,7 @@ public:
 
   // --- Constructeur pour les nombres ---
   PersistentValue(String k, ControlColor c, int defaultVal, int min, int max, uint16_t parentControl)
-    : color(c), min_val(min), max_val(max), isNumeric(true) {
+    : color(c), min_val(min), max_val(max), isNumeric(true), isBool(false) {
     init(k);
     intValue = preferences.getUInt(key.c_str(), constrain(defaultVal, min, max));
     registerWithESPUI(parentControl);
@@ -33,9 +35,17 @@ public:
 
   // --- Constructeur pour les strings ---
   PersistentValue(String k, ControlColor c, String defaultVal, uint16_t parentControl)
-    : color(c), min_val(0), max_val(0), isNumeric(false) {
+    : color(c), min_val(0), max_val(0), isNumeric(false), isBool(false) {
     init(k);
     stringValue = preferences.getString(key.c_str(), defaultVal);
+    registerWithESPUI(parentControl);
+  }
+
+  // --- Constructeur pour bool ---
+  PersistentValue(String k, ControlColor c, bool defaultVal, uint16_t parentControl)
+    : color(c), min_val(0), max_val(1), isNumeric(false), isBool(true) {
+    init(k);
+    boolValue = preferences.getUInt(key.c_str(), defaultVal);
     registerWithESPUI(parentControl);
   }
 
@@ -54,6 +64,7 @@ public:
   // --- Récupérer la valeur ---
   unsigned int getInt() const { return min(max_val, max(min_val, intValue)); }
   String getString() const { return stringValue; }
+  bool getBool() const { return boolValue != 0; }
 
 
   // --- Enregistrer dans ESPUI ---
@@ -71,7 +82,17 @@ public:
       ESPUI.addControl(ControlType::Min, label.c_str(), String(min_val), ControlColor::None, controlID);
       ESPUI.addControl(ControlType::Max, label.c_str(), String(max_val), ControlColor::None, controlID);
 
-    } else {
+    } 
+    else if(isBool) {
+      uint16_t controlID = ESPUI.addControl(
+      ControlType::Switcher, label.c_str(), String(boolValue), color, parentControl,
+        [](Control *sender, int eventname, void* UserParameter) {
+          if (UserParameter) reinterpret_cast<PersistentValue*>(UserParameter)->callback(sender, eventname);
+        },
+        this
+      );
+    }
+    else {
       uint16_t controlID = ESPUI.addControl(
         ControlType::Text, label.c_str(), stringValue.c_str(), color, parentControl,
         [](Control *sender, int eventname, void *UserParameter) {
@@ -88,11 +109,16 @@ public:
     if (isNumeric) {
       intValue = constrain(sender->value.toInt(), min_val, max_val);
       preferences.putUInt(key.c_str(), intValue);
-      Serial.printf("Saved numeric %s = %u\n", key.c_str(), intValue);
-    } else {
+      // Serial.printf("Saved numeric %s = %u\n", key.c_str(), intValue);
+    }
+    else if(isBool) {
+      boolValue = sender->value.toInt() ? 1 : 0;
+      preferences.putUInt(key.c_str(), boolValue);
+    }
+    else {
       stringValue = sender->value;
       preferences.putString(key.c_str(), stringValue);
-      Serial.printf("Saved string %s = %s\n", key.c_str(), stringValue.c_str());
+      // Serial.printf("Saved string %s = %s\n", key.c_str(), stringValue.c_str());
     }
   }
 };
