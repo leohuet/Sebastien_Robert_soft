@@ -16,9 +16,23 @@
 
 
 // OSC parameters
-IPAddress ip_address = IPAddress(192, 168, 1, 108);
-uint16_t ableton_port = 8001;
-uint16_t td_port = 9001;
+String ip = "192.168.1.108";
+uint16_t tdPort = 8001;
+uint16_t abletonPort = 9001;
+// Exemple d’adresses OSC
+struct OSCParam {
+  String name;
+  String address;
+  float minVal;
+  float maxVal;
+};
+
+OSCParam oscParams[] = {
+  {"volume", "/volume", 0.0, 1.0},
+  {"pitch", "/pitch", 200.0, 800.0},
+  {"speed", "/speed", 0.0, 2.0}
+};
+int numParams = sizeof(oscParams) / sizeof(OSCParam);
 
 // variables liées à la gestion du radar
 uint32_t last_radar_reading = 0;
@@ -38,6 +52,9 @@ RadarSensor radar(RADAR_TX_PIN, RADAR_RX_PIN);
 
 
 //persistentvalues pour les valeurs de contrôle de ESPUI
+PersistentValue* ip_address;
+PersistentValue* ableton_port;
+PersistentValue* td_port;
 PersistentValue* moving_max_distance;
 uint8_t old_mov_max_dist = 7;
 PersistentValue* stationary_max_distance;
@@ -46,6 +63,7 @@ PersistentValue* inactivity_timer;
 PersistentValue* reading_frequency;
 PersistentValue* espui_id;
 
+Preferences prefs;
 
 // initialise les valeurs de moyenne glissante
 const uint8_t size_mean = 10;
@@ -57,6 +75,46 @@ uint16_t angle_for_mean[3][size_mean];
 
 // UDP pour les messages OSC
 WiFiUDP Udp;
+
+
+// ====== CALLBACKS ======
+void generalCallback(Control *sender, int type) {
+  if (type == B_UP) return;
+
+  if (sender->id == 1) ip = sender->value;
+  else if (sender->id == 2) tdPort = sender->value.toInt();
+  else if (sender->id == 3) abletonPort = sender->value.toInt();
+
+  // Sauvegarde
+  prefs.begin("osc", false);
+  prefs.putString("destIP", ip);
+  prefs.putInt("portTD", tdPort);
+  prefs.putInt("portAbleton", abletonPort);
+  prefs.end();
+}
+
+void oscParamCallback(Control *sender, int type) {
+  if (type == B_UP) return;
+
+  for (int i = 0; i < numParams; i++) {
+    if (sender->id == (10 + i)) { // bouton test
+      IPAddress outIP;
+      outIP.fromString(ip);
+      OSCMessage msg(oscParams[i].address.c_str());
+      float val = (oscParams[i].minVal + oscParams[i].maxVal) / 2.0;
+      msg.add(val);
+      Udp.beginPacket(outIP, tdPort);
+      msg.send(Udp);
+      Udp.endPacket();
+      msg.empty();
+      Serial.printf("Sent test OSC: %s = %.2f\n", oscParams[i].address.c_str(), val);
+    }
+  }
+}
+
+
+// ====== SETUP UI ======
+void setupUI();
 
 
 uint16_t moyenne_glissante(uint16_t data_array[size_mean], uint16_t data){
@@ -90,12 +148,11 @@ void sendRadarData(uint8_t detected_id){
   msg.add(radars_data[detected_id].distance);
   msg.add(radars_data[detected_id].speed);
   msg.add(radars_data[detected_id].angle);
-  Udp.beginPacket(ip_address, ableton_port);
+  Udp.beginPacket(ip_address->getInt(), ableton_port->getInt());
   msg.send(Udp);
   Udp.endPacket();
   msg.empty();
 }
-
 
 
 void setup(){
@@ -111,23 +168,10 @@ void setup(){
   delay(2000);
 
   // initialise les controls de ESPUI
-  ESPUI.begin("MAGIQUE_MAIF");
-  uint16_t general_tab = ESPUI.addControl(ControlType::Tab, "Général", "Général");
-  uint16_t fan_tab = ESPUI.addControl(ControlType::Tab, "Contrôle des ventilateurs", "Contrôle des ventilateurs");
-  uint16_t radar_tab = ESPUI.addControl(ControlType::Tab, "Contrôle du radar", "Contrôle du radar");
-  
-  // id du boitier
-  espui_id = new PersistentValue("id", ControlColor::Wetasphalt, 0, 0, 4, general_tab);
+  ESPUI.begin("The Lights Which Can Be Heard");
+  setupUI();
 
-  // valeurs de contrôle du radar
-  reading_frequency = new PersistentValue("fréquence de lecture du radar", ControlColor::Wetasphalt, 100, 1000, 2000, radar_tab);
-  moving_max_distance = new PersistentValue("moving max distance", ControlColor::Wetasphalt, 7, 0, 7, radar_tab);
-  stationary_max_distance = new PersistentValue("stationary max distance", ControlColor::Wetasphalt, 7, 0, 7, radar_tab);
-  inactivity_timer = new PersistentValue("inactivity timer", ControlColor::Wetasphalt, 5, 0, 10, radar_tab);
-  old_mov_max_dist = moving_max_distance->get();
-  old_stat_max_dist = stationary_max_distance->get();
-
-  // initialise les valeurs pour moyenne glissante
+  // rolling average init
   for(int j=0; j<3; j++){
     for(int i=0; i<size_mean; i++){
       x_for_mean[j][i] = 0;
@@ -143,9 +187,9 @@ void setup(){
 }
 
 void loop(){
-  uint8_t id = espui_id->get();
+  uint8_t id = espui_id->getInt();
 
-  if(radar.update() && millis() - last_radar_reading > 1/reading_frequency->get()){
+  if(radar.update() && millis() - last_radar_reading > 1/reading_frequency->getInt()){
     last_radar_reading = millis();
     for (int i = 0; i < 3; i++) {
       RadarTarget t = radar.getTarget(i);
@@ -168,4 +212,36 @@ void loop(){
     }
   }
   delay(20);
+}
+
+
+// ====== SETUP UI ======
+void setupUI() {
+  uint16_t generalTab = ESPUI.addControl(ControlType::Tab, "Network", "Network");
+  uint16_t oscTab = ESPUI.addControl(ControlType::Tab, "OSC data parameters", "OSC data parameters");
+  uint16_t radarTab = ESPUI.addControl(ControlType::Tab, "Radar control", "Radar control");
+  
+  // general tab
+  espui_id = new PersistentValue("id", ControlColor::Wetasphalt, 0, 0, 4, generalTab);
+  ip_address = new PersistentValue("IP destination", ControlColor::Peterriver, "192.168.1.108", generalTab);
+  ableton_port = new PersistentValue("ableton port", ControlColor::Wetasphalt, 1000, 8001, 12000, generalTab);
+  td_port = new PersistentValue("td port", ControlColor::Wetasphalt, 1000, 8001, 12000, generalTab);
+
+  // osc tab
+  // for (int i = 0; i < numParams; i++) {
+  //   String label = String(oscParams[i].name) + " (" + oscParams[i].address + ")";
+  //   uint16_t group = ESPUI.addControl(Label, label.c_str(), "", None, tabOSC);
+  //   ESPUI.addControl(Number, "Min", String(oscParams[i].minVal).c_str(), None, group);
+  //   ESPUI.addControl(Number, "Max", String(oscParams[i].maxVal).c_str(), None, group);
+  //   ESPUI.addControl(Button, "Tester", "Send", oscParamCallback, group, Green);
+  // }
+
+  // radar tab
+  reading_frequency = new PersistentValue("fréquence de lecture du radar", ControlColor::Wetasphalt, 100, 1000, 2000, radarTab);
+  moving_max_distance = new PersistentValue("moving max distance", ControlColor::Wetasphalt, 7, 0, 7, radarTab);
+  stationary_max_distance = new PersistentValue("stationary max distance", ControlColor::Wetasphalt, 7, 0, 7, radarTab);
+  inactivity_timer = new PersistentValue("inactivity timer", ControlColor::Wetasphalt, 5, 0, 10, radarTab);
+  old_mov_max_dist = moving_max_distance->getInt();
+  old_stat_max_dist = stationary_max_distance->getInt();
+
 }
