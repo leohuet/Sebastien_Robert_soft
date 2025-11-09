@@ -89,11 +89,11 @@ PersistentValue* espuiID;
 
 // initialise les valeurs de moyenne glissante
 const uint8_t sizeMean = 10;
-int16_t xForMean[3][sizeMean];
-int16_t yForMean[3][sizeMean];
-int16_t distForMean[3][sizeMean];
-int16_t speedForMean[3][sizeMean];
-int16_t angleForMean[3][sizeMean];
+int16_t xForMean[MAX_DETECT][sizeMean];
+int16_t yForMean[MAX_DETECT][sizeMean];
+int16_t distForMean[MAX_DETECT][sizeMean];
+int16_t speedForMean[MAX_DETECT][sizeMean];
+int16_t angleForMean[MAX_DETECT][sizeMean];
 
 // UDP pour les messages OSC
 WiFiUDP Udp;
@@ -188,23 +188,29 @@ void sendRadarData(uint8_t detectedID, int16_t valuesArray[5]){
   // Serial.println("sending data...");
   IPAddress outIP;
   outIP.fromString(ipAddress->getString());
-  for(int i=detectedID*5+1; i<(detectedID*5+1+NUM_PARAMS); i++){
+  for(int i=detectedID*5+1; i<(detectedID*5+1+5); i++){
     OSCMessage msg(oscParams[i-1].address->getString().c_str());
-    if(!oscParams[i-1].sendToAbleton->getBool() && !oscParams[i-1].sendToTD->getBool()){ continue;}
-    msg.add(valuesArray[(i-1)%5]);
-    if(oscParams[i-1].sendToAbleton->getBool()){
+    bool toAbleton = oscParams[i-1].sendToAbleton->getBool();
+    bool toTD = oscParams[i-1].sendToTD->getBool();
+    // Serial.println(oscParams[i-1].sendToAbleton->getBool());
+    if(!toAbleton && !toTD){ continue;}
+    if(toAbleton){
+      Serial.println("sending to ableton..");
+      msg.add(valuesArray[(i-1)%5]);
       Udp.beginPacket(outIP, abletonPort->getInt());
       msg.send(Udp);
       Udp.endPacket();
       msg.empty();
     }
-    if(oscParams[i-1].sendToTD->getBool()){
+    if(toTD){
+      Serial.println("sending to TD..");
+      msg.add(valuesArray[(i-1)%5]);
       Udp.beginPacket(outIP, tdPort->getInt());
       msg.send(Udp);
       Udp.endPacket();
       msg.empty();
     }
-
+    delay(5);
   }
 }
 
@@ -264,7 +270,6 @@ void loop(){
       }
     }
     qsort(radarsData, MAX_DETECT, sizeof(struct radarData), compareByDist);
-
     for(int j=0; j<MAX_DETECT; j++){
       if(radarsData[j].x != 0.0){
         countMessages[j] = countMessages[j] + 1;

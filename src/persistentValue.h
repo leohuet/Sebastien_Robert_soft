@@ -64,7 +64,7 @@ public:
   // --- Récupérer la valeur ---
   unsigned int getInt() const { return min(max_val, max(min_val, intValue)); }
   String getString() const { return stringValue; }
-  bool getBool() const { return boolValue != 0; }
+  bool getBool() const { return boolValue;}
 
 
   // --- Enregistrer dans ESPUI ---
@@ -109,17 +109,14 @@ public:
     if (isNumeric) {
       intValue = constrain(sender->value.toInt(), min_val, max_val);
       preferences.putUInt(key.c_str(), intValue);
-      // Serial.printf("Saved numeric %s = %u\n", key.c_str(), intValue);
     }
     else if(isBool) {
       boolValue = sender->value.toInt() ? 1 : 0;
-      preferences.putUInt(key.c_str(), boolValue);
-      // Serial.printf("Saved bool %s = %u\n", key.c_str(), boolValue);
+      preferences.putBool(key.c_str(), boolValue);
     }
     else {
       stringValue = sender->value;
       preferences.putString(key.c_str(), stringValue);
-      Serial.printf("Saved string %s = %s\n", key.c_str(), stringValue.c_str());
     }
   }
 };
