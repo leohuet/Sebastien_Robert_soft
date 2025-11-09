@@ -62,11 +62,11 @@ bool is_radar_connected = false;
 struct radarData {
   bool detected;
   bool reallyDetected;
-  int16_t x;
-  int16_t y;
-  int16_t distance;
-  int16_t speed;
-  int16_t angle;
+  float x;
+  float y;
+  float distance;
+  float speed;
+  float angle;
 };
 
 radarData radarsData[MAX_DETECT];
@@ -118,6 +118,28 @@ WiFiUDP Udp;
 //   }
 // }
 
+void testSend(bool toAbleton, bool toTD, String address, float val){
+  IPAddress outIP;
+  outIP.fromString(ipAddress->getString());
+  OSCMessage msg(address.c_str());
+  if(toAbleton){
+      Serial.println("sending to ableton..");
+      msg.add(val);
+      Udp.beginPacket(outIP, abletonPort->getInt());
+      msg.send(Udp);
+      Udp.endPacket();
+      msg.empty();
+    }
+    if(toTD){
+      Serial.println("sending to TD..");
+      msg.add(val);
+      Udp.beginPacket(outIP, tdPort->getInt());
+      msg.send(Udp);
+      Udp.endPacket();
+      msg.empty();
+    }
+}
+
 
 // ====== SETUP UI ======
 void setupUI() {
@@ -145,12 +167,26 @@ void setupUI() {
     // --- Switchs persistants ---
     oscParams[i].sendToTD = new PersistentValue(label+"_TD", ControlColor::Alizarin, baseOscParams[i].sendToTD, oscTab);
     oscParams[i].sendToAbleton = new PersistentValue(label+"_AB", ControlColor::Alizarin, baseOscParams[i].sendToAbleton, oscTab);
-
-    // ESPUI.addControl(Button, "Tester", "Send", ControlColor::Peterriver, oscTab, oscParamCallback);
+    int* idxPtr = new int(i);
+    // Bouton de test
+    // ESPUI.addControl(ControlType::Button, "Tester", "Send", ControlColor::Emerald, oscTab,
+    //   [](Control *sender, int type, void* UserParameter) {
+    //       if (type == B_UP && UserParameter) {
+    //           int idx = *(int*)UserParameter;
+    //           float val = (oscParams[idx].minVal->getInt() + oscParams[idx].maxVal->getInt()) / 2.0f;
+    //           testSend(
+    //               oscParams[idx].sendToTD->getBool(),
+    //               oscParams[idx].sendToAbleton->getBool(),
+    //               oscParams[idx].address->getString(),
+    //               val
+    //           );
+    //       }
+    //   },
+    //   (void*)idxPtr);
   }
 
   // radar tab
-  readingFrequency = new PersistentValue("fréquence de lecture du radar", ControlColor::Wetasphalt, 100, 200, 2000, radarTab);
+  readingFrequency = new PersistentValue("fréquence de lecture du radar", ControlColor::Wetasphalt, 200, 100, 2000, radarTab);
   maxDist = new PersistentValue("max distance", ControlColor::Wetasphalt, 7, 0, 7, radarTab);
   inactivityTimer = new PersistentValue("inactivity timer", ControlColor::Wetasphalt, 5, 0, 10, radarTab);
 }
@@ -175,17 +211,17 @@ int compareByDist(const void* a, const void* b){
 
 void updateRadarData(uint8_t detectedID, uint16_t detected, int16_t x, int16_t y, int16_t distance, int16_t speed, int16_t angle){
   // met à jour les valeurs du radar d'un boitier avec son id et les nouvelles valeurs
+  int bound = maxDist->getInt()*1000;
   radarsData[detectedID].detected = detected;
-  radarsData[detectedID].x = x*detected;
-  radarsData[detectedID].y = y*detected;
-  radarsData[detectedID].distance = distance*detected;
-  radarsData[detectedID].speed = speed*detected;
-  radarsData[detectedID].angle = angle*detected;
+  radarsData[detectedID].x = constrain(map(x*detected, -bound, bound, 0, 100), 0, 100) / 100.0;
+  radarsData[detectedID].y = constrain(map(y*detected, -bound, bound, 0, 100), 0, 100) / 100.0;
+  radarsData[detectedID].distance = constrain(map(distance*detected, 0, bound, 0, 100), 0, 100) / 100.0;
+  radarsData[detectedID].speed = constrain(map(speed*detected, 0, 100, 0, 100), 0, 100) / 100.0;
+  radarsData[detectedID].angle = constrain(map(angle*detected, -90, 90, 0, 100), 0, 100) / 100.0;
 }
 
-void sendRadarData(uint8_t detectedID, int16_t valuesArray[5]){
+void sendRadarData(uint8_t detectedID, float valuesArray[5]){
   // envoie les valeurs du radar
-  // Serial.println("sending data...");
   IPAddress outIP;
   outIP.fromString(ipAddress->getString());
   for(int i=detectedID*5+1; i<(detectedID*5+1+5); i++){
@@ -195,7 +231,6 @@ void sendRadarData(uint8_t detectedID, int16_t valuesArray[5]){
     // Serial.println(oscParams[i-1].sendToAbleton->getBool());
     if(!toAbleton && !toTD){ continue;}
     if(toAbleton){
-      Serial.println("sending to ableton..");
       msg.add(valuesArray[(i-1)%5]);
       Udp.beginPacket(outIP, abletonPort->getInt());
       msg.send(Udp);
@@ -203,7 +238,6 @@ void sendRadarData(uint8_t detectedID, int16_t valuesArray[5]){
       msg.empty();
     }
     if(toTD){
-      Serial.println("sending to TD..");
       msg.add(valuesArray[(i-1)%5]);
       Udp.beginPacket(outIP, tdPort->getInt());
       msg.send(Udp);
@@ -247,8 +281,6 @@ void setup(){
 }
 
 void loop(){
-  uint8_t id = espuiID->getInt();
-
   if(radar.update() && (millis() - lastRadarReading) > 1/readingFrequency->getInt()){
     lastRadarReading = millis();
     for (int i = 0; i < MAX_DETECT; i++) {
@@ -279,7 +311,7 @@ void loop(){
           // Serial.printf("Good target %d: X=%d mm  Y=%d mm  Speed=%d mm/s  Dist=%d  Angle=%d°\n",
           //            j, (int)radarsData[j].x, (int)radarsData[j].y, (int)radarsData[j].speed, 
           //            radarsData[j].distance, radarsData[j].angle);
-          int16_t dataToSend[5] = {radarsData[j].x, radarsData[j].y, radarsData[j].distance, 
+          float dataToSend[5] = {radarsData[j].x, radarsData[j].y, radarsData[j].distance, 
                                   radarsData[j].speed, radarsData[j].angle};
           sendRadarData(j, dataToSend);
         }
