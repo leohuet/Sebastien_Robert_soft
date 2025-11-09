@@ -14,13 +14,9 @@
 #define RADAR_RX_PIN D3
 #define RADAR_TX_PIN D2
 
-#define NUM_PARAMS 3
+#define NUM_PARAMS 15
+#define MAX_DETECT 3
 
-
-// OSC parameters
-String ip = "192.168.1.108";
-uint16_t tdPort = 8001;
-uint16_t abletonPort = 9001;
 
 // Exemple d’adresses OSC
 struct OSCParam {
@@ -42,73 +38,85 @@ struct baseOSCParam {
   bool sendToAbleton;
 };
 baseOSCParam baseOscParams[] = {
-  {"volume", "/volume", 0, 100, false, true},
-  {"pitch",  "/pitch",  0, 100, true, false},
-  {"speed",  "/speed",  0, 100, true, true}
+  {"1_x", "/1/x", 0, 100, true, false},
+  {"1_y",  "/1/y",  0, 100, false, false},
+  {"1_dist",  "/1/dist",  0, 100, false, false},
+  {"1_speed", "/1/speed", 0, 100, false, false},
+  {"1_angle",  "/1/angle",  0, 100, false, false},
+  {"2_x", "/2/x", 0, 100, false, false},
+  {"2_y",  "/2/y",  0, 100, false, false},
+  {"2_dist",  "/2/dist",  0, 100, false, false},
+  {"2_speed", "/2/speed", 0, 100, false, false},
+  {"2_angle",  "/2/angle",  0, 100, false, false},
+  {"3_x", "/3/x", 0, 100, false, false},
+  {"3_y",  "/3/y",  0, 100, false, false},
+  {"3_dist",  "/3/dist",  0, 100, false, false},
+  {"3_speed", "/3/speed", 0, 100, false, false},
+  {"3_angle",  "/3/angle",  0, 100, false, false}
 };
 
 // variables liées à la gestion du radar
-uint32_t last_radar_reading = 0;
+uint32_t lastRadarReading = 0;
 bool is_radar_connected = false;
 
-struct Radar_data {
+struct radarData {
   bool detected;
-  uint16_t x;
-  uint16_t y;
-  uint16_t distance;
-  uint16_t speed;
-  uint16_t angle;
+  bool reallyDetected;
+  int16_t x;
+  int16_t y;
+  int16_t distance;
+  int16_t speed;
+  int16_t angle;
 };
 
-Radar_data radars_data[3];
+radarData radarsData[MAX_DETECT];
 RadarSensor radar(RADAR_TX_PIN, RADAR_RX_PIN);
+uint8_t countMessages[MAX_DETECT] = {0, 0, 0};
+uint8_t goodCountMessages[MAX_DETECT] = {0, 0, 0};
 
 //persistentvalues pour les valeurs de contrôle de ESPUI
 PersistentValue* isStarted;
 
-PersistentValue* ip_address;
-PersistentValue* ableton_port;
-PersistentValue* td_port;
+PersistentValue* ipAddress;
+PersistentValue* abletonPort;
+PersistentValue* tdPort;
 
-PersistentValue* moving_max_distance;
-uint8_t old_mov_max_dist = 7;
-PersistentValue* stationary_max_distance;
-uint8_t old_stat_max_dist = 7;
-PersistentValue* inactivity_timer;
-PersistentValue* reading_frequency;
-PersistentValue* espui_id;
+PersistentValue* maxDist;
+PersistentValue* inactivityTimer;
+PersistentValue* readingFrequency;
+PersistentValue* espuiID;
 
 
 // initialise les valeurs de moyenne glissante
-const uint8_t size_mean = 10;
-uint16_t x_for_mean[3][size_mean];
-uint16_t y_for_mean[3][size_mean];
-uint16_t dist_for_mean[3][size_mean];
-uint16_t speed_for_mean[3][size_mean];
-uint16_t angle_for_mean[3][size_mean];
+const uint8_t sizeMean = 10;
+int16_t xForMean[3][sizeMean];
+int16_t yForMean[3][sizeMean];
+int16_t distForMean[3][sizeMean];
+int16_t speedForMean[3][sizeMean];
+int16_t angleForMean[3][sizeMean];
 
 // UDP pour les messages OSC
 WiFiUDP Udp;
 
 
-void oscParamCallback(Control *sender, int type) {
-  if (type == B_UP) return;
+// void oscParamCallback(Control *sender, int type) {
+//   if (type == B_UP) return;
 
-  for (int i = 0; i < NUM_PARAMS; i++) {
-    if (sender->id == (10 + i)) { // bouton test
-      IPAddress outIP;
-      outIP.fromString(ip_address->getString());
-      OSCMessage msg(oscParams[i].address->getString().c_str());
-      float val = ((oscParams[i].minVal->getInt() + oscParams[i].maxVal->getInt()) / 2.0) / 100.0;
-      msg.add(val);
-      Udp.beginPacket(outIP, td_port->getInt());
-      msg.send(Udp);
-      Udp.endPacket();
-      msg.empty();
-      Serial.printf("Sent test OSC: %s = %.2f\n", oscParams[i].address->getString().c_str(), val);
-    }
-  }
-}
+//   for (int i = 0; i < NUM_PARAMS; i++) {
+//     if (sender->id == (10 + i)) { // bouton test
+//       IPAddress outIP;
+//       outIP.fromString(ipAddress->getString());
+//       OSCMessage msg(oscParams[i].address->getString().c_str());
+//       float val = ((oscParams[i].minVal->getInt() + oscParams[i].maxVal->getInt()) / 2.0) / 100.0;
+//       msg.add(val);
+//       Udp.beginPacket(outIP, tdPort->getInt());
+//       msg.send(Udp);
+//       Udp.endPacket();
+//       msg.empty();
+//       Serial.printf("Sent test OSC: %s = %.2f\n", oscParams[i].address->getString().c_str(), val);
+//     }
+//   }
+// }
 
 
 // ====== SETUP UI ======
@@ -118,12 +126,12 @@ void setupUI() {
   uint16_t radarTab = ESPUI.addControl(ControlType::Tab, "Radar control", "Radar control");
   
   // general tab
-  espui_id = new PersistentValue("id", ControlColor::Wetasphalt, 0, 0, 4, generalTab);
+  espuiID = new PersistentValue("id", ControlColor::Wetasphalt, 0, 0, 4, generalTab);
   isStarted = new PersistentValue("Start", ControlColor::Alizarin, false, generalTab);
   String baseIP = "192.168.1.108";
-  ip_address = new PersistentValue("IP destination", ControlColor::Peterriver, baseIP, generalTab);
-  ableton_port = new PersistentValue("ableton port", ControlColor::Wetasphalt, 1000, 8001, 12000, generalTab);
-  td_port = new PersistentValue("td port", ControlColor::Wetasphalt, 1000, 9001, 12000, generalTab);
+  ipAddress = new PersistentValue("IP destination", ControlColor::Peterriver, baseIP, generalTab);
+  abletonPort = new PersistentValue("ableton port", ControlColor::Wetasphalt, 1000, 8001, 12000, generalTab);
+  tdPort = new PersistentValue("td port", ControlColor::Wetasphalt, 1000, 9001, 12000, generalTab);
 
   // osc tab
   for (int i = 0; i < NUM_PARAMS; i++) {
@@ -138,57 +146,66 @@ void setupUI() {
     oscParams[i].sendToTD = new PersistentValue(label+"_TD", ControlColor::Alizarin, baseOscParams[i].sendToTD, oscTab);
     oscParams[i].sendToAbleton = new PersistentValue(label+"_AB", ControlColor::Alizarin, baseOscParams[i].sendToAbleton, oscTab);
 
-    ESPUI.addControl(Button, "Tester", "Send", ControlColor::Peterriver, oscTab, oscParamCallback);
+    // ESPUI.addControl(Button, "Tester", "Send", ControlColor::Peterriver, oscTab, oscParamCallback);
   }
 
   // radar tab
-  reading_frequency = new PersistentValue("fréquence de lecture du radar", ControlColor::Wetasphalt, 100, 1000, 2000, radarTab);
-  moving_max_distance = new PersistentValue("moving max distance", ControlColor::Wetasphalt, 7, 0, 7, radarTab);
-  stationary_max_distance = new PersistentValue("stationary max distance", ControlColor::Wetasphalt, 7, 0, 7, radarTab);
-  inactivity_timer = new PersistentValue("inactivity timer", ControlColor::Wetasphalt, 5, 0, 10, radarTab);
-  old_mov_max_dist = moving_max_distance->getInt();
-  old_stat_max_dist = stationary_max_distance->getInt();
-
+  readingFrequency = new PersistentValue("fréquence de lecture du radar", ControlColor::Wetasphalt, 100, 200, 2000, radarTab);
+  maxDist = new PersistentValue("max distance", ControlColor::Wetasphalt, 7, 0, 7, radarTab);
+  inactivityTimer = new PersistentValue("inactivity timer", ControlColor::Wetasphalt, 5, 0, 10, radarTab);
 }
 
 
-uint16_t moyenne_glissante(uint16_t data_array[size_mean], uint16_t data){
-  // calcule la moyenne glissante sur x données (défini par size_mean)
-  uint16_t somme = 0;
-  for (int i=1; i<size_mean; i++){
-    data_array[i-1] = data_array[i];
-    somme += data_array[i-1];
+int16_t rollingAverage(int16_t dataArray[sizeMean], int16_t data){
+  // calcule la moyenne glissante sur x données (défini par sizeMean)
+  int16_t somme = 0;
+  for (int i=1; i<sizeMean; i++){
+    dataArray[i-1] = dataArray[i];
+    somme += dataArray[i-1];
   }
-  data_array[size_mean-1] = data;
-  somme += data_array[size_mean-1];
-  return somme/size_mean;
+  dataArray[sizeMean-1] = data;
+  somme += dataArray[sizeMean-1];
+  return somme/sizeMean;
 }
 
-void updateRadarData(uint8_t detected_id, uint16_t detected, uint16_t x, uint8_t y, uint16_t distance, uint16_t speed, uint8_t angle){
+// Comparison function for sorting based on age
+int compareByDist(const void* a, const void* b){
+    return ((struct radarData*)a)->distance - ((struct radarData*)b)->distance;
+}
+
+void updateRadarData(uint8_t detectedID, uint16_t detected, int16_t x, int16_t y, int16_t distance, int16_t speed, int16_t angle){
   // met à jour les valeurs du radar d'un boitier avec son id et les nouvelles valeurs
-  radars_data[detected_id].detected = detected;
-  radars_data[detected_id].x = x*detected;
-  radars_data[detected_id].y = y*detected;
-  radars_data[detected_id].distance = distance*detected;
-  radars_data[detected_id].speed = speed*detected;
-  radars_data[detected_id].angle = angle*detected;
+  radarsData[detectedID].detected = detected;
+  radarsData[detectedID].x = x*detected;
+  radarsData[detectedID].y = y*detected;
+  radarsData[detectedID].distance = distance*detected;
+  radarsData[detectedID].speed = speed*detected;
+  radarsData[detectedID].angle = angle*detected;
 }
 
-void sendRadarData(uint8_t detected_id){
-  // envoie les valeurs du radar du boitier à tous autres
+void sendRadarData(uint8_t detectedID, int16_t valuesArray[5]){
+  // envoie les valeurs du radar
+  // Serial.println("sending data...");
   IPAddress outIP;
-  outIP.fromString(ip_address->getString());
-  OSCMessage msg("/broadcast");
-  msg.add(detected_id);
-  msg.add(radars_data[detected_id].x);
-  msg.add(radars_data[detected_id].y);
-  msg.add(radars_data[detected_id].distance);
-  msg.add(radars_data[detected_id].speed);
-  msg.add(radars_data[detected_id].angle);
-  Udp.beginPacket(outIP, ableton_port->getInt());
-  msg.send(Udp);
-  Udp.endPacket();
-  msg.empty();
+  outIP.fromString(ipAddress->getString());
+  for(int i=detectedID*5+1; i<(detectedID*5+1+NUM_PARAMS); i++){
+    OSCMessage msg(oscParams[i-1].address->getString().c_str());
+    if(!oscParams[i-1].sendToAbleton->getBool() && !oscParams[i-1].sendToTD->getBool()){ continue;}
+    msg.add(valuesArray[(i-1)%5]);
+    if(oscParams[i-1].sendToAbleton->getBool()){
+      Udp.beginPacket(outIP, abletonPort->getInt());
+      msg.send(Udp);
+      Udp.endPacket();
+      msg.empty();
+    }
+    if(oscParams[i-1].sendToTD->getBool()){
+      Udp.beginPacket(outIP, tdPort->getInt());
+      msg.send(Udp);
+      Udp.endPacket();
+      msg.empty();
+    }
+
+  }
 }
 
 
@@ -209,13 +226,13 @@ void setup(){
   setupUI();
 
   // rolling average init
-  for(int j=0; j<3; j++){
-    for(int i=0; i<size_mean; i++){
-      x_for_mean[j][i] = 0;
-      y_for_mean[j][i] = 0;
-      dist_for_mean[j][i] = 0;
-      speed_for_mean[j][i] = 0;
-      angle_for_mean[j][i] = 0;
+  for(int j=0; j<MAX_DETECT; j++){
+    for(int i=0; i<sizeMean; i++){
+      xForMean[j][i] = 0;
+      yForMean[j][i] = 0;
+      distForMean[j][i] = 0;
+      speedForMean[j][i] = 0;
+      angleForMean[j][i] = 0;
     }
   }
 
@@ -224,30 +241,47 @@ void setup(){
 }
 
 void loop(){
-  uint8_t id = espui_id->getInt();
+  uint8_t id = espuiID->getInt();
 
-  // Serial.println(oscParams[0].sendToAbleton);
-
-  if(radar.update() && millis() - last_radar_reading > 1/reading_frequency->getInt()){
-    last_radar_reading = millis();
-    for (int i = 0; i < 3; i++) {
+  if(radar.update() && (millis() - lastRadarReading) > 1/readingFrequency->getInt()){
+    lastRadarReading = millis();
+    for (int i = 0; i < MAX_DETECT; i++) {
+      radarsData[i] = {};
       RadarTarget t = radar.getTarget(i);
-      if(t.x > 0.0 && t.x < 7000){
+      bool realData = t.x != 0.0 && abs(t.x) < maxDist->getInt()*1000;
+      if(t.detected && realData && t.distance < (maxDist->getInt()*1000)){
         // met à jour les valeurs du radar local avec calcul d'une moyenne glissante
         updateRadarData(i,
           t.detected,
-          moyenne_glissante(x_for_mean[i], t.x),
-          moyenne_glissante(y_for_mean[i], t.y),
-          moyenne_glissante(dist_for_mean[i], t.distance),
-          moyenne_glissante(speed_for_mean[i], t.speed),
-          moyenne_glissante(angle_for_mean[i], t.angle)
+          rollingAverage(xForMean[i], t.x),
+          rollingAverage(yForMean[i], t.y),
+          rollingAverage(distForMean[i], (int)t.distance),
+          rollingAverage(speedForMean[i], t.speed),
+          rollingAverage(angleForMean[i], t.angle)
         );
-        Serial.printf("Target %d: X=%d mm  Y=%d mm  Speed=%d mm/s  Dist=%.1f  Angle=%.1f°\n",
-                      i, (int)t.x, (int)t.y, (int)t.speed, t.distance, t.angle);
-        // envoie ces valeurs mises à jour aux autres boitiers
-        if(isStarted->getBool())
-        sendRadarData(i);
-        // debugRadar(id);
+        // Serial.printf("Target %d: X=%d mm  Y=%d mm  Speed=%d mm/s  Dist=%.1f  Angle=%.1f°\n",
+        //               i, (int)t.x, (int)t.y, (int)t.speed, t.distance, t.angle);
+      }
+    }
+    qsort(radarsData, MAX_DETECT, sizeof(struct radarData), compareByDist);
+
+    for(int j=0; j<MAX_DETECT; j++){
+      if(radarsData[j].x != 0.0){
+        countMessages[j] = countMessages[j] + 1;
+        goodCountMessages[j] = countMessages[j];
+        radarsData[j].reallyDetected = countMessages[j] >= 4;
+        if(isStarted->getBool() && radarsData[j].reallyDetected){
+          // Serial.printf("Good target %d: X=%d mm  Y=%d mm  Speed=%d mm/s  Dist=%d  Angle=%d°\n",
+          //            j, (int)radarsData[j].x, (int)radarsData[j].y, (int)radarsData[j].speed, 
+          //            radarsData[j].distance, radarsData[j].angle);
+          int16_t dataToSend[5] = {radarsData[j].x, radarsData[j].y, radarsData[j].distance, 
+                                  radarsData[j].speed, radarsData[j].angle};
+          sendRadarData(j, dataToSend);
+        }
+      }
+      else {
+        if(countMessages[j] > 0 && (goodCountMessages[j]-countMessages[j]) < 5){countMessages[j] = countMessages[j] - 1;}
+        else {countMessages[j] = 0;}
       }
     }
   }
