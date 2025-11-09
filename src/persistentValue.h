@@ -35,7 +35,7 @@ public:
 
   // --- Constructeur pour les strings ---
   PersistentValue(String k, ControlColor c, String defaultVal, uint16_t parentControl)
-    : color(c), min_val(0), max_val(0), isNumeric(false), isBool(false) {
+    : color(c), isNumeric(false), isBool(false) {
     init(k);
     stringValue = preferences.getString(key.c_str(), defaultVal);
     registerWithESPUI(parentControl);
@@ -45,7 +45,7 @@ public:
   PersistentValue(String k, ControlColor c, bool defaultVal, uint16_t parentControl)
     : color(c), min_val(0), max_val(1), isNumeric(false), isBool(true) {
     init(k);
-    boolValue = preferences.getUInt(key.c_str(), defaultVal);
+    boolValue = preferences.getBool(key.c_str(), defaultVal);
     registerWithESPUI(parentControl);
   }
 
@@ -114,11 +114,12 @@ public:
     else if(isBool) {
       boolValue = sender->value.toInt() ? 1 : 0;
       preferences.putUInt(key.c_str(), boolValue);
+      // Serial.printf("Saved bool %s = %u\n", key.c_str(), boolValue);
     }
     else {
       stringValue = sender->value;
       preferences.putString(key.c_str(), stringValue);
-      // Serial.printf("Saved string %s = %s\n", key.c_str(), stringValue.c_str());
+      Serial.printf("Saved string %s = %s\n", key.c_str(), stringValue.c_str());
     }
   }
 };
