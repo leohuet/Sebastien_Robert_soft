@@ -26,6 +26,7 @@ struct OSCParam {
   PersistentValue* maxVal;
   PersistentValue* sendToTD;
   PersistentValue* sendToAbleton;
+  PersistentValue* testOn;
 };
 OSCParam oscParams[NUM_PARAMS];
 
@@ -36,27 +37,29 @@ struct baseOSCParam {
   uint8_t maxVal;
   bool sendToTD;
   bool sendToAbleton;
+  bool testOn;
 };
 baseOSCParam baseOscParams[] = {
-  {"1_x", "/1/x", 0, 100, true, false},
-  {"1_y",  "/1/y",  0, 100, false, false},
-  {"1_dist",  "/1/dist",  0, 100, false, false},
-  {"1_speed", "/1/speed", 0, 100, false, false},
-  {"1_angle",  "/1/angle",  0, 100, false, false},
-  {"2_x", "/2/x", 0, 100, false, false},
-  {"2_y",  "/2/y",  0, 100, false, false},
-  {"2_dist",  "/2/dist",  0, 100, false, false},
-  {"2_speed", "/2/speed", 0, 100, false, false},
-  {"2_angle",  "/2/angle",  0, 100, false, false},
-  {"3_x", "/3/x", 0, 100, false, false},
-  {"3_y",  "/3/y",  0, 100, false, false},
-  {"3_dist",  "/3/dist",  0, 100, false, false},
-  {"3_speed", "/3/speed", 0, 100, false, false},
-  {"3_angle",  "/3/angle",  0, 100, false, false}
+  {"1_x", "/1/x", 0, 100, true, false, false},
+  {"1_y",  "/1/y",  0, 100, false, false, false},
+  {"1_dist",  "/1/dist",  0, 100, false, false, false},
+  {"1_speed", "/1/speed", 0, 100, false, false,  false},
+  {"1_angle",  "/1/angle",  0, 100, false, false, false},
+  {"2_x", "/2/x", 0, 100, false, false, false},
+  {"2_y",  "/2/y",  0, 100, false, false, false},
+  {"2_dist",  "/2/dist",  0, 100, false, false, false},
+  {"2_speed", "/2/speed", 0, 100, false, false, false},
+  {"2_angle",  "/2/angle",  0, 100, false, false, false},
+  {"3_x", "/3/x", 0, 100, false, false, false},
+  {"3_y",  "/3/y",  0, 100, false, false, false},
+  {"3_dist",  "/3/dist",  0, 100, false, false, false},
+  {"3_speed", "/3/speed", 0, 100, false, false, false},
+  {"3_angle",  "/3/angle",  0, 100, false, false, false}
 };
 
 // variables liées à la gestion du radar
 uint32_t lastRadarReading = 0;
+uint32_t lastTest = 0;
 bool is_radar_connected = false;
 
 struct radarData {
@@ -99,28 +102,11 @@ int16_t angleForMean[MAX_DETECT][sizeMean];
 WiFiUDP Udp;
 
 
-// void oscParamCallback(Control *sender, int type) {
-//   if (type == B_UP) return;
 
-//   for (int i = 0; i < NUM_PARAMS; i++) {
-//     if (sender->id == (10 + i)) { // bouton test
-//       IPAddress outIP;
-//       outIP.fromString(ipAddress->getString());
-//       OSCMessage msg(oscParams[i].address->getString().c_str());
-//       float val = ((oscParams[i].minVal->getInt() + oscParams[i].maxVal->getInt()) / 2.0) / 100.0;
-//       msg.add(val);
-//       Udp.beginPacket(outIP, tdPort->getInt());
-//       msg.send(Udp);
-//       Udp.endPacket();
-//       msg.empty();
-//       Serial.printf("Sent test OSC: %s = %.2f\n", oscParams[i].address->getString().c_str(), val);
-//     }
-//   }
-// }
-
-void testSend(bool toAbleton, bool toTD, String address, float val){
+void testSend(bool toAbleton, bool toTD, String address){
   IPAddress outIP;
   outIP.fromString(ipAddress->getString());
+  float val = 0.5;
   OSCMessage msg(address.c_str());
   if(toAbleton){
       Serial.println("sending to ableton..");
@@ -152,8 +138,8 @@ void setupUI() {
   isStarted = new PersistentValue("Start", ControlColor::Alizarin, false, generalTab);
   String baseIP = "192.168.1.108";
   ipAddress = new PersistentValue("IP destination", ControlColor::Peterriver, baseIP, generalTab);
-  abletonPort = new PersistentValue("ableton port", ControlColor::Wetasphalt, 1000, 8001, 12000, generalTab);
-  tdPort = new PersistentValue("td port", ControlColor::Wetasphalt, 1000, 9001, 12000, generalTab);
+  abletonPort = new PersistentValue("ableton port", ControlColor::Wetasphalt, 8001, 1000, 12000, generalTab);
+  tdPort = new PersistentValue("td port", ControlColor::Wetasphalt, 9001, 1000, 12000, generalTab);
 
   // osc tab
   for (int i = 0; i < NUM_PARAMS; i++) {
@@ -169,20 +155,7 @@ void setupUI() {
     oscParams[i].sendToAbleton = new PersistentValue(label+"_AB", ControlColor::Alizarin, baseOscParams[i].sendToAbleton, oscTab);
     int* idxPtr = new int(i);
     // Bouton de test
-    // ESPUI.addControl(ControlType::Button, "Tester", "Send", ControlColor::Emerald, oscTab,
-    //   [](Control *sender, int type, void* UserParameter) {
-    //       if (type == B_UP && UserParameter) {
-    //           int idx = *(int*)UserParameter;
-    //           float val = (oscParams[idx].minVal->getInt() + oscParams[idx].maxVal->getInt()) / 2.0f;
-    //           testSend(
-    //               oscParams[idx].sendToTD->getBool(),
-    //               oscParams[idx].sendToAbleton->getBool(),
-    //               oscParams[idx].address->getString(),
-    //               val
-    //           );
-    //       }
-    //   },
-    //   (void*)idxPtr);
+    oscParams[i].testOn = new PersistentValue(label+"_test", ControlColor::Alizarin, baseOscParams[i].testOn, oscTab);
   }
 
   // radar tab
@@ -281,6 +254,14 @@ void setup(){
 }
 
 void loop(){
+  if((millis() - lastTest) > 2000){
+    lastTest = millis();
+    for(int a=0; a<NUM_PARAMS; a++){
+      if(oscParams[a].testOn->getBool()){
+        testSend(oscParams[a].sendToAbleton->getBool(), oscParams[a].sendToTD->getBool(), oscParams[a].address->getString());
+      }
+    }
+  }
   if(radar.update() && (millis() - lastRadarReading) > 1/readingFrequency->getInt()){
     lastRadarReading = millis();
     for (int i = 0; i < MAX_DETECT; i++) {
