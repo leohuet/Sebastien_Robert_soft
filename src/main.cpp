@@ -14,7 +14,8 @@
 #define RADAR_RX_PIN D3
 #define RADAR_TX_PIN D2
 
-#define NUM_PARAMS 15
+#define NUM_PARAMS 19
+#define META_PARAMS 4
 #define MAX_DETECT 3
 
 
@@ -40,6 +41,10 @@ struct baseOSCParam {
   bool testOn;
 };
 baseOSCParam baseOscParams[] = {
+  {"presence", "/presence", 0, 100, false, false, false},
+  {"mean_x", "/mean/x", 0, 100, false, false, false},
+  {"mean_y", "/mean/y", 0, 100, false, false, false},
+  {"mean_dist", "/mean/dist", 0, 100, false, false, false},
   {"1_x", "/1/x", 0, 100, true, false, false},
   {"1_y",  "/1/y",  0, 100, false, false, false},
   {"1_dist",  "/1/dist",  0, 100, false, false, false},
@@ -61,6 +66,11 @@ baseOSCParam baseOscParams[] = {
 uint32_t lastRadarReading = 0;
 uint32_t lastTest = 0;
 bool is_radar_connected = false;
+
+float meanX = 0;
+float meanY = 0;
+float meanDist = 0;
+float meanDetected = 0;
 
 struct radarData {
   bool detected;
@@ -106,7 +116,10 @@ WiFiUDP Udp;
 // ====== SETUP UI ======
 void setupUI() {
   uint16_t generalTab = ESPUI.addControl(ControlType::Tab, "Network", "Network");
-  uint16_t oscTab = ESPUI.addControl(ControlType::Tab, "OSC data parameters", "OSC data parameters");
+  uint16_t oscTab1 = ESPUI.addControl(ControlType::Tab, "OSC meta data", "OSC meta data");
+  uint16_t oscTab2 = ESPUI.addControl(ControlType::Tab, "OSC 1 radar data", "OSC 1 radar data");
+  uint16_t oscTab3 = ESPUI.addControl(ControlType::Tab, "OSC 2 radar data", "OSC 2 radar data");
+  uint16_t oscTab4 = ESPUI.addControl(ControlType::Tab, "OSC 3 radar data", "OSC 3 radar data");
   uint16_t radarTab = ESPUI.addControl(ControlType::Tab, "Radar control", "Radar control");
   
   // general tab
@@ -118,20 +131,53 @@ void setupUI() {
   tdPort = new PersistentValue("td port", ControlColor::Wetasphalt, 9001, 1000, 12000, generalTab);
 
   // osc tab
-  for (int i = 0; i < NUM_PARAMS; i++) {
-    ESPUI.addControl(ControlType::Separator, baseOscParams[i].name.c_str(), baseOscParams[i].name.c_str(), ControlColor::Turquoise, oscTab);
-    // oscParams[i].name = new PersistentValue(baseOscParams[i].name, ControlColor::Peterriver, baseOscParams[i].name, oscTab);
+  for(int i = 0; i < META_PARAMS; i++) {
+    ESPUI.addControl(ControlType::Separator, "Meta parameters", "Meta parameters", ControlColor::Turquoise, oscTab1);
     String label = baseOscParams[i].name;
-    // uint16_t group = ESPUI.addControl(Label, label.c_str(), "", None, oscTab);
-    oscParams[i].address = new PersistentValue(label+"_address", ControlColor::Peterriver, baseOscParams[i].address, oscTab);
-    oscParams[i].minVal = new PersistentValue(label+"_min (%)", ControlColor::Wetasphalt, 0, 0, 100, oscTab);
-    oscParams[i].maxVal = new PersistentValue(label+"_max (%)", ControlColor::Wetasphalt, 100, 0, 100, oscTab);
+    oscParams[i].address = new PersistentValue(label+"_address", ControlColor::Peterriver, baseOscParams[i].address, oscTab1);
+    oscParams[i].minVal = new PersistentValue(label+"_min (%)", ControlColor::Wetasphalt, 0, 0, 100, oscTab1);
+    oscParams[i].maxVal = new PersistentValue(label+"_max (%)", ControlColor::Wetasphalt, 100, 0, 100, oscTab1);
     // --- Switchs persistants ---
-    oscParams[i].sendToTD = new PersistentValue(label+"_TD", ControlColor::Alizarin, baseOscParams[i].sendToTD, oscTab);
-    oscParams[i].sendToAbleton = new PersistentValue(label+"_AB", ControlColor::Alizarin, baseOscParams[i].sendToAbleton, oscTab);
-    int* idxPtr = new int(i);
+    oscParams[i].sendToTD = new PersistentValue(label+"_TD", ControlColor::Alizarin, baseOscParams[i].sendToTD, oscTab1);
+    oscParams[i].sendToAbleton = new PersistentValue(label+"_AB", ControlColor::Alizarin, baseOscParams[i].sendToAbleton, oscTab1);
     // Bouton de test
-    oscParams[i].testOn = new PersistentValue(label+"_test", ControlColor::Alizarin, baseOscParams[i].testOn, oscTab);
+    oscParams[i].testOn = new PersistentValue(label+"_test", ControlColor::Alizarin, baseOscParams[i].testOn, oscTab1);
+  }
+  for (int i = META_PARAMS; i < (5+META_PARAMS); i++) {
+    ESPUI.addControl(ControlType::Separator, baseOscParams[i].name.c_str(), baseOscParams[i].name.c_str(), ControlColor::Turquoise, oscTab2);
+    String label = baseOscParams[i].name;
+    oscParams[i].address = new PersistentValue(label+"_address", ControlColor::Peterriver, baseOscParams[i].address, oscTab2);
+    oscParams[i].minVal = new PersistentValue(label+"_min (%)", ControlColor::Wetasphalt, 0, 0, 100, oscTab2);
+    oscParams[i].maxVal = new PersistentValue(label+"_max (%)", ControlColor::Wetasphalt, 100, 0, 100, oscTab2);
+    // --- Switchs persistants ---
+    oscParams[i].sendToTD = new PersistentValue(label+"_TD", ControlColor::Alizarin, baseOscParams[i].sendToTD, oscTab2);
+    oscParams[i].sendToAbleton = new PersistentValue(label+"_AB", ControlColor::Alizarin, baseOscParams[i].sendToAbleton, oscTab2);
+    // Bouton de test
+    oscParams[i].testOn = new PersistentValue(label+"_test", ControlColor::Alizarin, baseOscParams[i].testOn, oscTab2);
+  }
+  for (int i = (5+META_PARAMS); i < (10+META_PARAMS); i++) {
+    ESPUI.addControl(ControlType::Separator, baseOscParams[i].name.c_str(), baseOscParams[i].name.c_str(), ControlColor::Turquoise, oscTab3);
+    String label = baseOscParams[i].name;
+    oscParams[i].address = new PersistentValue(label+"_address", ControlColor::Peterriver, baseOscParams[i].address, oscTab3);
+    oscParams[i].minVal = new PersistentValue(label+"_min (%)", ControlColor::Wetasphalt, 0, 0, 100, oscTab3);
+    oscParams[i].maxVal = new PersistentValue(label+"_max (%)", ControlColor::Wetasphalt, 100, 0, 100, oscTab3);
+    // --- Switchs persistants ---
+    oscParams[i].sendToTD = new PersistentValue(label+"_TD", ControlColor::Alizarin, baseOscParams[i].sendToTD, oscTab3);
+    oscParams[i].sendToAbleton = new PersistentValue(label+"_AB", ControlColor::Alizarin, baseOscParams[i].sendToAbleton, oscTab3);
+    // Bouton de test
+    oscParams[i].testOn = new PersistentValue(label+"_test", ControlColor::Alizarin, baseOscParams[i].testOn, oscTab3);
+  }
+  for (int i = (10+META_PARAMS); i < NUM_PARAMS; i++) {
+    ESPUI.addControl(ControlType::Separator, baseOscParams[i].name.c_str(), baseOscParams[i].name.c_str(), ControlColor::Turquoise, oscTab4);
+    String label = baseOscParams[i].name;
+    oscParams[i].address = new PersistentValue(label+"_address", ControlColor::Peterriver, baseOscParams[i].address, oscTab4);
+    oscParams[i].minVal = new PersistentValue(label+"_min (%)", ControlColor::Wetasphalt, 0, 0, 100, oscTab4);
+    oscParams[i].maxVal = new PersistentValue(label+"_max (%)", ControlColor::Wetasphalt, 100, 0, 100, oscTab4);
+    // --- Switchs persistants ---
+    oscParams[i].sendToTD = new PersistentValue(label+"_TD", ControlColor::Alizarin, baseOscParams[i].sendToTD, oscTab4);
+    oscParams[i].sendToAbleton = new PersistentValue(label+"_AB", ControlColor::Alizarin, baseOscParams[i].sendToAbleton, oscTab4);
+    // Bouton de test
+    oscParams[i].testOn = new PersistentValue(label+"_test", ControlColor::Alizarin, baseOscParams[i].testOn, oscTab4);
   }
 
   // radar tab
@@ -196,13 +242,12 @@ void sendRadarData(uint8_t detectedID, float valuesArray[5]){
   // envoie les valeurs du radar
   IPAddress outIP;
   outIP.fromString(ipAddress->getString());
-  for(int i=detectedID*5+1; i<(detectedID*5+1+5); i++){
-    OSCMessage msg(oscParams[i-1].address->getString().c_str());
-    bool toAbleton = oscParams[i-1].sendToAbleton->getBool();
-    bool toTD = oscParams[i-1].sendToTD->getBool();
-    // Serial.println(oscParams[i-1].sendToAbleton->getBool());
+  for(int i=detectedID*5+META_PARAMS; i<(detectedID*5+5+META_PARAMS); i++){
+    OSCMessage msg(oscParams[i].address->getString().c_str());
+    bool toAbleton = oscParams[i].sendToAbleton->getBool();
+    bool toTD = oscParams[i].sendToTD->getBool();
     if(!toAbleton && !toTD){ continue;}
-    float value = (valuesArray[(i-1)%5] * (oscParams[i-1].maxVal->getInt() - oscParams[i-1].minVal->getInt()) + oscParams[i-1].minVal->getInt()) / 100.0;
+    float value = (valuesArray[(i-META_PARAMS)%5] * (oscParams[i].maxVal->getInt() - oscParams[i].minVal->getInt()) + oscParams[i].minVal->getInt()) / 100.0;
     if(toAbleton){
       msg.add(value);
       Udp.beginPacket(outIP, abletonPort->getInt());
@@ -218,6 +263,32 @@ void sendRadarData(uint8_t detectedID, float valuesArray[5]){
       msg.empty();
     }
     delay(5);
+  }
+}
+
+void sendMetaData(float metaArray[META_PARAMS]){
+  IPAddress outIP;
+  outIP.fromString(ipAddress->getString());
+  for(int a=0; a<META_PARAMS; a++){
+    OSCMessage msg(oscParams[a].address->getString().c_str());
+    bool toAbleton = oscParams[a].sendToAbleton->getBool();
+    bool toTD = oscParams[a].sendToTD->getBool();
+    if(!toAbleton && !toTD){ continue;}
+    float value = (metaArray[a] * (oscParams[a].maxVal->getInt() - oscParams[a].minVal->getInt()) + oscParams[a].minVal->getInt()) / 100.0;
+    if(toAbleton){
+      msg.add(value);
+      Udp.beginPacket(outIP, abletonPort->getInt());
+      msg.send(Udp);
+      Udp.endPacket();
+      msg.empty();
+    }
+    if(toTD){
+      msg.add(value);
+      Udp.beginPacket(outIP, tdPort->getInt());
+      msg.send(Udp);
+      Udp.endPacket();
+      msg.empty();
+    }
   }
 }
 
@@ -296,9 +367,9 @@ void loop(){
       if(radarsData[j].x != 0.0){
         countMessages[j] = countMessages[j] + 1;
         goodCountMessages[j] = countMessages[j];
-        radarsData[j].reallyDetected = countMessages[j] >= 4;
+        radarsData[j].reallyDetected = countMessages[j] >= sizeMean;
         if(isStarted->getBool() && radarsData[j].reallyDetected){
-          float dataToSend[5] = {radarsData[j].x, radarsData[j].y, radarsData[j].distance, 
+          float dataToSend[5] = {radarsData[j].x, radarsData[j].y, radarsData[j].distance,
                                 radarsData[j].speed, radarsData[j].angle};
           sendRadarData(j, dataToSend);
         }
@@ -318,6 +389,12 @@ void loop(){
         }
       }
     }
+    meanX = (radarsData[0].x + radarsData[1].x + radarsData[2].x) / MAX_DETECT;
+    meanY = (radarsData[0].y + radarsData[1].y + radarsData[2].y) / MAX_DETECT;
+    meanDist = (radarsData[0].distance + radarsData[1].distance + radarsData[2].distance) / MAX_DETECT;
+    meanDetected = ((radarsData[0].reallyDetected ? 1 : 0) + (radarsData[1].reallyDetected ? 1 : 0) + (radarsData[2].reallyDetected ? 1 : 0)) / float(MAX_DETECT);
+    float meanData[META_PARAMS] = {meanDetected, meanX, meanY, meanDist};
+    if(isStarted->getBool()){ sendMetaData(meanData); }
   }
   delay(20);
 }
