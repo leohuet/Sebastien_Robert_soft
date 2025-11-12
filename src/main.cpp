@@ -364,7 +364,7 @@ void loop(){
     }
     qsort(radarsData, MAX_DETECT, sizeof(struct radarData), compareByDist);
     for(int j=0; j<MAX_DETECT; j++){
-      if(radarsData[j].x != 0.0){
+      if(radarsData[j].x > 0.05){
         countMessages[j] = countMessages[j] + 1;
         goodCountMessages[j] = countMessages[j];
         radarsData[j].reallyDetected = countMessages[j] >= sizeMean;
