@@ -388,7 +388,10 @@ void loop(){
     meanDist = (radarsData[0].distance + radarsData[1].distance + radarsData[2].distance) / MAX_DETECT;
     meanAngle = (radarsData[0].angle + radarsData[1].angle + radarsData[2].angle) / MAX_DETECT;
     float meanData[META_PARAMS] = {meanDetected, meanX, meanY, meanDist, meanAngle};
-    if(isStarted->getBool()){ sendMetaData(meanData); }
+    bool noSends = countMessages[0] == 0 && countMessages[1] == 0 && countMessages[2] == 0;
+    if(isStarted->getBool() && !noSends){
+      sendMetaData(meanData);
+    }
   }
   delay(20);
 }
