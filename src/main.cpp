@@ -15,7 +15,7 @@
 #define RADAR_TX_PIN D2
 
 #define NUM_PARAMS 20
-#define META_PARAMS 5
+#define META_PARAMS 6
 #define MAX_DETECT 3
 
 
@@ -45,6 +45,7 @@ baseOSCParam baseOscParams[] = {
   {"mean_x", "/mean/x", 0, 100, false, false, false},
   {"mean_y", "/mean/y", 0, 100, false, false, false},
   {"mean_dist", "/mean/dist", 0, 100, false, false, false},
+  {"mean_speed", "/mean/speed", 0, 100, false, false, false},
   {"mean_angle", "/mean/angle", 0, 100, false, false, false},
   {"1_x", "/1/x", 0, 100, true, false, false},
   {"1_y",  "/1/y",  0, 100, false, false, false},
@@ -85,6 +86,7 @@ float meanDetected = 0;
 float meanX = 0;
 float meanY = 0;
 float meanDist = 0;
+float meanSpeed = 0;
 float meanAngle = 0;
 
 // data handling variables
@@ -386,8 +388,9 @@ void loop(){
     meanX = (radarsData[0].x + radarsData[1].x + radarsData[2].x) / MAX_DETECT;
     meanY = (radarsData[0].y + radarsData[1].y + radarsData[2].y) / MAX_DETECT;
     meanDist = (radarsData[0].distance + radarsData[1].distance + radarsData[2].distance) / MAX_DETECT;
+    meanSpeed = (radarsData[0].speed + radarsData[1].speed + radarsData[2].speed) / MAX_DETECT;
     meanAngle = (radarsData[0].angle + radarsData[1].angle + radarsData[2].angle) / MAX_DETECT;
-    float meanData[META_PARAMS] = {meanDetected, meanX, meanY, meanDist, meanAngle};
+    float meanData[META_PARAMS] = {meanDetected, meanX, meanY, meanDist, meanSpeed, meanAngle};
     bool noSends = countMessages[0] == 0 && countMessages[1] == 0 && countMessages[2] == 0;
     if(isStarted->getBool() && !noSends){
       sendMetaData(meanData);

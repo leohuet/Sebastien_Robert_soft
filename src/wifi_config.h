@@ -41,6 +41,7 @@ void begin_wifi(){
   // Serial.println(reversed_mac, HEX);
 
   // snprintf(host, 22, (String("UC1_") + String(HOST) + String("_%llX")).c_str(), reversed_mac);
+  strcpy(host, "ESP32_OTA_TEST");
 
   // Wi-Fi
   WiFi.mode(WIFI_STA);
