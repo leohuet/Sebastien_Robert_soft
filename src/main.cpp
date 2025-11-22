@@ -162,8 +162,8 @@ void setupUI() {
 
   // radar tab
   readingFrequency = new PersistentValue("Reading frequency (in ms)", ControlColor::Wetasphalt, 100, 50, 2000, radarTab);
-  minDist = new PersistentValue("min distance (in m)", ControlColor::Wetasphalt, 2, 0, 7, radarTab);
-  maxDist = new PersistentValue("max distance (in m)", ControlColor::Wetasphalt, 7, 0, 7, radarTab);
+  minDist = new PersistentValue("min distance (in cm)", ControlColor::Wetasphalt, 200, 0, 700, radarTab);
+  maxDist = new PersistentValue("max distance (in cm)", ControlColor::Wetasphalt, 700, 0, 700, radarTab);
   inactivityTimer = new PersistentValue("inactivity timer (in ms)", ControlColor::Wetasphalt, 2000, 500, 10000, radarTab);
 }
 
@@ -190,8 +190,8 @@ int compareByDist(const void* a, const void* b){
 // ====== updata radar data into struct ======
 void updateRadarData(uint8_t detectedID, uint16_t detected, int16_t x, int16_t y, int16_t distance, int16_t speed, int16_t angle){
   // for each data, normalize between boundaries decided by min and max distance on ESPUI
-  int bound = maxDist->getInt()*1000;
-  int min = minDist->getInt()*1000;
+  int bound = maxDist->getInt()*10;
+  int min = minDist->getInt()*10;
   radarsData[detectedID].detected = detected;
   radarsData[detectedID].x = constrain(map(x, -bound, bound, 0, 100), 0, 100) / 100.0;
   radarsData[detectedID].y = constrain(map(y, -bound, bound, 0, 100), 0, 100) / 100.0;
@@ -299,8 +299,8 @@ void setup(){
   // rolling average init
   for(int j=0; j<MAX_DETECT; j++){
     for(int i=0; i<sizeMean; i++){
-      xForMean[j][i] = -(maxDist->getInt()*1000);
-      yForMean[j][i] = -(maxDist->getInt()*1000);
+      xForMean[j][i] = -(maxDist->getInt()*10);
+      yForMean[j][i] = -(maxDist->getInt()*10);
       distForMean[j][i] = 0;
       speedForMean[j][i] = 0;
       angleForMean[j][i] = -90;
@@ -324,13 +324,13 @@ void loop(){
   // get new radar data every x ms (based on readingFrequency)
   if(radar.update() && (millis() - lastRadarReading) > readingFrequency->getInt()){
     lastRadarReading = millis();
-    int bound = maxDist->getInt()*1000;
+    int bound = maxDist->getInt()*10;
     // for loop through all 3 detection possible at once
     for (int i = 0; i < MAX_DETECT; i++) {
       radarsData[i] = {};
       RadarTarget t = radar.getTarget(i);
       bool realData = t.x != 0.0 && abs(t.x) > -bound;
-      if(t.detected && realData && t.distance < (maxDist->getInt()*1000) && t.distance > (minDist->getInt()*1000)){
+      if(t.detected && realData && t.distance < (maxDist->getInt()*10) && t.distance > (minDist->getInt()*10)){
         // if x data is not equal to 0, is between -bound and bound, as well as distance between min and max dist,
         // update radar data with rolling average for all parameters
         updateRadarData(i,
