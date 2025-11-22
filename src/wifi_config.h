@@ -14,6 +14,8 @@
 #define FAST_BLINK (millis() % 200 < 50)
 #define HEARTBEAT ((millis() + 1000 )% 2000 < 50)
 
+#define WIFI_NAME "Freebox-8323DD"
+#define SSID "password"
 
 #define OTA_PASS "question"
 
@@ -48,7 +50,7 @@ void begin_wifi(){
   // WiFi.config(IPAddress(10, 241, 229, 250), IPAddress(10, 241, 229, 1), IPAddress(10, 241, 229, 1), IPAddress(255, 255, 255, 0));
   WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE, INADDR_NONE);
   // WiFi.setHostname(host); //define hostname
-  WiFi.begin("Freebox-8323DD", "dissidemus6-liare.-locatim-paludum");
+  WiFi.begin(WIFI_NAME, SSID);
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
 
