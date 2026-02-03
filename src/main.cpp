@@ -194,10 +194,10 @@ void updateRadarData(uint8_t detectedID, uint16_t detected, int16_t x, int16_t y
   int min = minDist->getInt()*10;
   radarsData[detectedID].detected = detected;
   radarsData[detectedID].x = constrain(map(x, -bound, bound, 0, 100), 0, 100) / 100.0;
-  radarsData[detectedID].y = constrain(map(y, -bound, bound, 0, 100), 0, 100) / 100.0;
+  radarsData[detectedID].y = constrain(map(y, min, bound, 0, 100), 0, 100) / 100.0;
   radarsData[detectedID].distance = constrain(map(distance*detected, min, bound, 0, 100), 0, 100) / 100.0;
   radarsData[detectedID].speed = constrain(map(speed*detected, 0, 100, 0, 100), 0, 100) / 100.0;
-  radarsData[detectedID].angle = constrain(map(angle, -90, 90, 0, 100), 0, 100) / 100.0;
+  radarsData[detectedID].angle = constrain(map(angle, -60, 60, 0, 100), 0, 100) / 100.0;
 }
 
 
@@ -303,7 +303,7 @@ void setup(){
       yForMean[j][i] = -(maxDist->getInt()*10);
       distForMean[j][i] = 0;
       speedForMean[j][i] = 0;
-      angleForMean[j][i] = -90;
+      angleForMean[j][i] = -60;
     }
   }
 
@@ -347,10 +347,10 @@ void loop(){
         updateRadarData(i,
           t.detected,
           rollingAverage(xForMean[i], -bound),
-          rollingAverage(yForMean[i], -bound),
+          rollingAverage(yForMean[i], 0),
           rollingAverage(distForMean[i], 0),
           rollingAverage(speedForMean[i], 0),
-          rollingAverage(angleForMean[i], -90)
+          rollingAverage(angleForMean[i], -60)
         );
       }
     }
