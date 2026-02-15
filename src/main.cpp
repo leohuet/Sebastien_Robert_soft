@@ -108,6 +108,10 @@ PersistentValue* maxDist;
 PersistentValue* inactivityTimer;
 PersistentValue* readingFrequency;
 
+bool espUiOn = false;
+bool onWifi = false;
+int startBound = 7000;
+int startMin = 2000;
 
 // initialise rolling average arrays
 const uint8_t sizeMean = 10;
@@ -190,8 +194,17 @@ int compareByDist(const void* a, const void* b){
 // ====== updata radar data into struct ======
 void updateRadarData(uint8_t detectedID, uint16_t detected, int16_t x, int16_t y, int16_t distance, int16_t speed, int16_t angle){
   // for each data, normalize between boundaries decided by min and max distance on ESPUI
-  int bound = maxDist->getInt()*10;
-  int min = minDist->getInt()*10;
+  int bound = 0;
+  int min = 0;
+  if(espUiOn){
+    bound = maxDist->getInt()*10;
+    min = minDist->getInt()*10;
+  }
+  else{
+    bound = startBound;
+    min = startMin;
+  }
+  
   radarsData[detectedID].detected = detected;
   radarsData[detectedID].x = constrain(map(x, -bound, bound, 0, 100), 0, 100) / 100.0;
   radarsData[detectedID].y = constrain(map(y, min, bound, 0, 100), 0, 100) / 100.0;
@@ -202,85 +215,103 @@ void updateRadarData(uint8_t detectedID, uint16_t detected, int16_t x, int16_t y
 
 
 // ====== test OSC send function ======
-void testSend(bool toAbleton, bool toTD, String address){
-  IPAddress outIP;
-  outIP.fromString(ipAddress->getString());
-  float val = 0.5;
-  OSCMessage msg(address.c_str());
-  if(toAbleton){
-      Serial.println("sending to ableton..");
-      msg.add(val);
-      Udp.beginPacket(outIP, abletonPort->getInt());
-      msg.send(Udp);
-      Udp.endPacket();
-      msg.empty();
-    }
-    if(toTD){
-      Serial.println("sending to TD..");
-      msg.add(val);
-      Udp.beginPacket(outIP, tdPort->getInt());
-      msg.send(Udp);
-      Udp.endPacket();
-      msg.empty();
-    }
-}
+// void testSend(bool toAbleton, bool toTD, String address){
+//   IPAddress outIP;
+//   outIP.fromString(ipAddress->getString());
+//   float val = 0.5;
+//   OSCMessage msg(address.c_str());
+//   if(toAbleton){
+//       Serial.println("sending to ableton..");
+//       msg.add(val);
+//       Udp.beginPacket(outIP, abletonPort->getInt());
+//       msg.send(Udp);
+//       Udp.endPacket();
+//       msg.empty();
+//     }
+//     if(toTD){
+//       Serial.println("sending to TD..");
+//       msg.add(val);
+//       Udp.beginPacket(outIP, tdPort->getInt());
+//       msg.send(Udp);
+//       Udp.endPacket();
+//       msg.empty();
+//     }
+// }
 
 // ====== sending radar data (x, y, dist, speed, angle) ======
 void sendRadarData(uint8_t detectedID, float valuesArray[5]){
   // only if toggles to send to Ableton and/or Touch are on
-  IPAddress outIP;
-  outIP.fromString(ipAddress->getString());
+  // IPAddress outIP;
+  // outIP.fromString(ipAddress->getString());
   for(int i=detectedID*5+META_PARAMS; i<(detectedID*5+5+META_PARAMS); i++){
-    OSCMessage msg(oscParams[i].address->getString().c_str());
-    bool toAbleton = oscParams[i].sendToAbleton->getBool();
-    bool toTD = oscParams[i].sendToTD->getBool();
+    // OSCMessage msg(oscParams[i].address->getString().c_str());
+    float value = 0;
+    bool toAbleton = false;
+    bool toTD = false;
+    if(espUiOn){
+      value = (valuesArray[(i-META_PARAMS)%5] * (oscParams[i].maxVal->getInt() - oscParams[i].minVal->getInt()) + oscParams[i].minVal->getInt()) / 100.0;
+      toAbleton = oscParams[i].sendToAbleton->getBool();
+      toTD = oscParams[i].sendToTD->getBool();
+    }
+    else{
+      value = (valuesArray[(i-META_PARAMS)%5] * (baseOscParams[i].maxVal - baseOscParams[i].minVal) + baseOscParams[i].minVal) / 100.0;
+      toAbleton = baseOscParams[i].sendToAbleton;
+      toTD = baseOscParams[i].sendToTD;
+    }
     if(!toAbleton && !toTD){ continue;}
-    float value = (valuesArray[(i-META_PARAMS)%5] * (oscParams[i].maxVal->getInt() - oscParams[i].minVal->getInt()) + oscParams[i].minVal->getInt()) / 100.0;
     if(toAbleton){
-      msg.add(value);
-      Udp.beginPacket(outIP, abletonPort->getInt());
-      msg.send(Udp);
-      Udp.endPacket();
-      msg.empty();
+      // msg.add(value);
+      // Udp.beginPacket(outIP, abletonPort->getInt());
+      // msg.send(Udp);
+      // Udp.endPacket();
+      // msg.empty();
+      if(espUiOn){
+        Serial.print(oscParams[i].address->getString().c_str());
+      }
+      else{
+        Serial.print(baseOscParams[i].address);
+      }
+      Serial.print(" ");
+      Serial.println(value);
     }
-    if(toTD){
-      msg.add(value);
-      Udp.beginPacket(outIP, tdPort->getInt());
-      msg.send(Udp);
-      Udp.endPacket();
-      msg.empty();
-    }
+    // if(toTD){
+      // msg.add(value);
+      // Udp.beginPacket(outIP, tdPort->getInt());
+      // msg.send(Udp);
+      // Udp.endPacket();
+      // msg.empty();
+    // }
     delay(5);
   }
 }
 
 // ====== sending meta params data (means for presence, x, y, dist and angle) ======
-void sendMetaData(float metaArray[META_PARAMS]){
-  // only if toggles to send to Ableton and/or Touch are on
-  IPAddress outIP;
-  outIP.fromString(ipAddress->getString());
-  for(int a=0; a<META_PARAMS; a++){
-    OSCMessage msg(oscParams[a].address->getString().c_str());
-    bool toAbleton = oscParams[a].sendToAbleton->getBool();
-    bool toTD = oscParams[a].sendToTD->getBool();
-    if(!toAbleton && !toTD){ continue;}
-    float value = (metaArray[a] * (oscParams[a].maxVal->getInt() - oscParams[a].minVal->getInt()) + oscParams[a].minVal->getInt()) / 100.0;
-    if(toAbleton){
-      msg.add(value);
-      Udp.beginPacket(outIP, abletonPort->getInt());
-      msg.send(Udp);
-      Udp.endPacket();
-      msg.empty();
-    }
-    if(toTD){
-      msg.add(value);
-      Udp.beginPacket(outIP, tdPort->getInt());
-      msg.send(Udp);
-      Udp.endPacket();
-      msg.empty();
-    }
-  }
-}
+// void sendMetaData(float metaArray[META_PARAMS]){
+//   // only if toggles to send to Ableton and/or Touch are on
+//   IPAddress outIP;
+//   outIP.fromString(ipAddress->getString());
+//   for(int a=0; a<META_PARAMS; a++){
+//     OSCMessage msg(oscParams[a].address->getString().c_str());
+//     bool toAbleton = oscParams[a].sendToAbleton->getBool();
+//     bool toTD = oscParams[a].sendToTD->getBool();
+//     if(!toAbleton && !toTD){ continue;}
+//     float value = (metaArray[a] * (oscParams[a].maxVal->getInt() - oscParams[a].minVal->getInt()) + oscParams[a].minVal->getInt()) / 100.0;
+//     if(toAbleton){
+//       msg.add(value);
+//       Udp.beginPacket(outIP, abletonPort->getInt());
+//       msg.send(Udp);
+//       Udp.endPacket();
+//       msg.empty();
+//     }
+//     if(toTD){
+//       msg.add(value);
+//       Udp.beginPacket(outIP, tdPort->getInt());
+//       msg.send(Udp);
+//       Udp.endPacket();
+//       msg.empty();
+//     }
+//   }
+// }
 
 
 void setup(){
@@ -289,18 +320,22 @@ void setup(){
   radar.begin(256000);
   delay(500);
 
-  begin_wifi();
+  if(onWifi){
+    begin_wifi();
+  }
   delay(2000);
 
-  // ESPUI control init
-  ESPUI.begin("The Lights Which Can Be Heard");
-  setupUI();
+  if(espUiOn){
+    // ESPUI control init
+    ESPUI.begin("The Lights Which Can Be Heard");
+    setupUI();
+  }
 
   // rolling average init
   for(int j=0; j<MAX_DETECT; j++){
     for(int i=0; i<sizeMean; i++){
-      xForMean[j][i] = -(maxDist->getInt()*10);
-      yForMean[j][i] = -(maxDist->getInt()*10);
+      xForMean[j][i] = 0;
+      yForMean[j][i] = 0;
       distForMean[j][i] = 0;
       speedForMean[j][i] = 0;
       angleForMean[j][i] = -60;
@@ -313,24 +348,40 @@ void setup(){
 
 void loop(){
   // test OSC if toggle on
-  if((millis() - lastTest) > 2000){
-    lastTest = millis();
-    for(int a=0; a<NUM_PARAMS; a++){
-      if(oscParams[a].testOn->getBool()){
-        testSend(oscParams[a].sendToAbleton->getBool(), oscParams[a].sendToTD->getBool(), oscParams[a].address->getString());
-      }
-    }
+  // if((millis() - lastTest) > 2000){
+  //   lastTest = millis();
+  //   for(int a=0; a<NUM_PARAMS; a++){
+  //     if(oscParams[a].testOn->getBool()){
+  //       testSend(oscParams[a].sendToAbleton->getBool(), oscParams[a].sendToTD->getBool(), oscParams[a].address->getString());
+  //     }
+  //   }
+  // }
+  int readingFreq = 100;
+  int inactTimer = 1000;
+  bool started = false;
+  if(espUiOn){
+    readingFreq = readingFrequency->getInt();
+    started = isStarted->getBool();
   }
   // get new radar data every x ms (based on readingFrequency)
-  if(radar.update() && (millis() - lastRadarReading) > readingFrequency->getInt()){
+  if(radar.update() && (millis() - lastRadarReading) > readingFreq){
     lastRadarReading = millis();
-    int bound = maxDist->getInt()*10;
+    int bound = 0;
+    int min = 0;
+    if(espUiOn){
+      bound = maxDist->getInt()*10;
+      min = minDist->getInt()*10;
+    }
+    else{
+      bound = startBound;
+      min = startMin;
+    }
     // for loop through all 3 detection possible at once
     for (int i = 0; i < MAX_DETECT; i++) {
       radarsData[i] = {};
       RadarTarget t = radar.getTarget(i);
       bool realData = t.x != 0.0 && abs(t.x) > -bound;
-      if(t.detected && realData && t.distance < (maxDist->getInt()*10) && t.distance > (minDist->getInt()*10)){
+      if(t.detected && realData && t.distance < bound && t.distance > min){
         // if x data is not equal to 0, is between -bound and bound, as well as distance between min and max dist,
         // update radar data with rolling average for all parameters
         updateRadarData(i,
@@ -362,19 +413,22 @@ void loop(){
         // If you have data filling all requirements for x time (based on inactivityTimer), reallyDetected = true
         countMessages[j] = countMessages[j] + 1;
         goodCountMessages[j] = countMessages[j];
-        radarsData[j].reallyDetected = countMessages[j] >= int(inactivityTimer->getInt() / readingFrequency->getInt());
-        if(isStarted->getBool() && radarsData[j].reallyDetected){
+        if(espUiOn){
+          inactTimer = inactivityTimer->getInt();
+        }
+        radarsData[j].reallyDetected = countMessages[j] >= int(inactTimer / readingFreq);
+        if(started && radarsData[j].reallyDetected){
           float dataToSend[5] = {radarsData[j].x, radarsData[j].y, radarsData[j].distance,
                                 radarsData[j].speed, radarsData[j].angle};
           sendRadarData(j, dataToSend);
         }
       }
       // else if data is not good anymore, decrease countMessages for some time (inactivityTimer) until you stop sending data
-      else if(countMessages[j] > 0 && (goodCountMessages[j]-countMessages[j]) < int(inactivityTimer->getInt() / readingFrequency->getInt())){
+      else if(countMessages[j] > 0 && (goodCountMessages[j]-countMessages[j]) < int(inactTimer / readingFreq)){
         countMessages[j] = countMessages[j] - 1;
         float dataToSend[5] = {radarsData[j].x, radarsData[j].y, radarsData[j].distance, 
                               radarsData[j].speed, radarsData[j].angle};
-        if(isStarted->getBool()){
+        if(started){
           sendRadarData(j, dataToSend);
         }
       }
@@ -392,9 +446,9 @@ void loop(){
     meanAngle = (radarsData[0].angle + radarsData[1].angle + radarsData[2].angle) / MAX_DETECT;
     float meanData[META_PARAMS] = {meanDetected, meanX, meanY, meanDist, meanSpeed, meanAngle};
     bool noSends = countMessages[0] == 0 && countMessages[1] == 0 && countMessages[2] == 0;
-    if(isStarted->getBool() && !noSends){
-      sendMetaData(meanData);
-    }
+    // if(started && !noSends){
+    //   sendMetaData(meanData);
+    // }
   }
   delay(20);
 }
